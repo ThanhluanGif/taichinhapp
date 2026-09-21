@@ -45,7 +45,8 @@ export default function Home() {
   const fetchNews = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/data/news.json?t=' + Date.now());
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+      const res = await fetch(`${basePath}/data/news.json?t=` + Date.now());
       if (res.ok) {
         const data: NewsArticle[] = await res.json();
         if (data && data.length > 0) {
