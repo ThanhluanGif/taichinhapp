@@ -1,4 +1,4 @@
-name: Run News RSS Scraper
+name: Run News & Stocks Scraper
 
 on:
   schedule:
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scraper/requirements.txt
 
-      - name: Run Scraper Script
+      - name: Run News RSS Scraper
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -32,9 +32,13 @@ jobs:
         run: |
           python scraper/main.py
 
-      - name: Commit and Push Updated Data (Fallback JSON)
+      - name: Run SSI iBoard Stock Scraper
+        run: |
+          python scraper/stock_scraper.py
+
+      - name: Commit and Push Updated Data
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/data/news.json scraper/data/news.json || true
-          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: Cập nhật tin tức RSS mới nhất [skip ci]" && git push)
+          git add public/data/news.json public/data/stocks.json scraper/data/ || true
+          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: Cập nhật tin tức & bảng giá SSI mới nhất [skip ci]" && git push)

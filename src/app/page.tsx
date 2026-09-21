@@ -4,9 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { NewsFeed } from '@/components/NewsFeed';
 import { PortfolioTracker } from '@/components/PortfolioTracker';
+import { SSIBoard } from '@/components/SSIBoard';
 import { NewsArticle } from '@/types';
+import { BarChart3, Newspaper, PieChart } from 'lucide-react';
 
-// Sample fallback news in case news.json is fetching or empty
 const SAMPLE_NEWS: NewsArticle[] = [
   {
     id: 'sample-1',
@@ -38,6 +39,7 @@ const SAMPLE_NEWS: NewsArticle[] = [
 ];
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<'SSIBOARD' | 'NEWS_PORTFOLIO'>('SSIBOARD');
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -70,7 +72,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans antialiased">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
       {/* Top Bar Navigation */}
       <Header
         lastUpdated={lastUpdated}
@@ -78,31 +80,67 @@ export default function Home() {
         isRefreshing={isLoading}
       />
 
-      {/* Main Content Layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
-          {/* Left Column: News Feed (8 Columns on Desktop) */}
-          <section className="lg:col-span-8 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                📰 Bảng Tin Kinh Tế & Thị Trường
-              </h2>
-              <span className="text-xs text-slate-400">
-                Hiển thị {articles.length} bản tin mới nhất
-              </span>
-            </div>
+      {/* Mode Switcher Navigation (Bảng Giá SSI vs Tin Tức & Danh Mục) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+        <div className="flex items-center gap-2 p-1.5 bg-slate-900/90 rounded-xl border border-slate-800 w-fit">
+          <button
+            onClick={() => setActiveTab('SSIBOARD')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'SSIBOARD'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Bảng Giá Trực Tuyến SSI iBoard (VN-Index)
+          </button>
 
-            <NewsFeed articles={articles} isLoading={isLoading} />
-          </section>
-
-          {/* Right Column: Portfolio Tracker (4 Columns on Desktop) */}
-          <section className="lg:col-span-4 space-y-4">
-            <div className="sticky top-20">
-              <PortfolioTracker />
-            </div>
-          </section>
+          <button
+            onClick={() => setActiveTab('NEWS_PORTFOLIO')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'NEWS_PORTFOLIO'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Newspaper className="w-4 h-4" />
+            Tin Tức Kinh Tế & Sổ Lệnh Danh Mục
+          </button>
         </div>
+      </div>
+
+      {/* Main Content Layout */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {activeTab === 'SSIBOARD' ? (
+          /* View 1: SSI-style Electronic Stock Board */
+          <section className="space-y-4">
+            <SSIBoard />
+          </section>
+        ) : (
+          /* View 2: News Feed + Portfolio Tracker */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: News Feed (8 Cols) */}
+            <section className="lg:col-span-8 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  📰 Bảng Tin Kinh Tế & Thị Trường
+                </h2>
+                <span className="text-xs text-slate-400">
+                  Hiển thị {articles.length} bản tin mới nhất
+                </span>
+              </div>
+
+              <NewsFeed articles={articles} isLoading={isLoading} />
+            </section>
+
+            {/* Right Column: Portfolio Tracker (4 Cols) */}
+            <section className="lg:col-span-4 space-y-4">
+              <div className="sticky top-20">
+                <PortfolioTracker />
+              </div>
+            </section>
+          </div>
+        )}
       </main>
     </div>
   );
