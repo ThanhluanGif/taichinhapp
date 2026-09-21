@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { Header } from '@/components/Header';
 import { NewsFeed } from '@/components/NewsFeed';
 import { PortfolioTracker } from '@/components/PortfolioTracker';
@@ -10,7 +11,7 @@ import { StockDetailModal } from '@/components/StockDetailModal';
 import { NewsArticle } from '@/types';
 import { StockQuote, CompanyProfile, StocksDataPayload } from '@/types/stock';
 import { getBasePath } from '@/utils/path';
-import { BarChart3, Newspaper, Sparkles } from 'lucide-react';
+import { BarChart3, Newspaper, Sparkles, TrendingUp, Shield, Activity, Terminal } from 'lucide-react';
 
 const SAMPLE_NEWS: NewsArticle[] = [
   {
@@ -99,9 +100,14 @@ export default function Home() {
   }, []);
 
   const allStocks = stocksData?.all || [];
+  const basePath = getBasePath();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased">
+    <div className="min-h-screen bg-[#070A0F] text-slate-100 font-sans antialiased selection:bg-blue-600 selection:text-white relative overflow-x-hidden">
+      
+      {/* Subtle Background Radial Glow */}
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-gradient-to-b from-blue-900/15 via-indigo-900/5 to-transparent pointer-events-none blur-3xl z-0" />
+
       {/* Top Bar Navigation */}
       <Header
         lastUpdated={lastUpdated}
@@ -109,15 +115,59 @@ export default function Home() {
         isRefreshing={isLoading}
       />
 
-      {/* Mode Switcher Navigation */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
-        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-900/90 rounded-xl border border-slate-800 w-fit">
+      {/* Hero Showcase Bar (Anti-AI Look: Bespoke Terminal Atmosphere) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2 relative z-10">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-r from-slate-950 via-[#0B1120] to-slate-950 p-4 sm:p-5 shadow-2xl">
+          <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-15 pointer-events-none overflow-hidden hidden md:block">
+            <Image
+              src={`${basePath}/assets/images/hero_banner.jpg`}
+              alt="Trading Terminal Ambient"
+              fill
+              className="object-cover"
+            />
+          </div>
+
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[11px] font-bold text-blue-400">
+                <Terminal className="w-3 h-3 text-blue-400" />
+                <span>VIETNAM FINANCIAL TRADING TERMINAL 2026</span>
+              </div>
+              <h2 className="text-base sm:text-xl font-black text-white tracking-tight">
+                Hệ Thống Phân Tích Kỹ Thuật & Radar Cổ Phiếu Thông Minh
+              </h2>
+              <p className="text-xs text-slate-400 max-w-2xl">
+                Tích hợp dữ liệu thời gian thực sàn <strong>SSI iBoard (HOSE & HNX)</strong>, biểu đồ nến chuẩn Việt Nam, nhận diện mẫu nến AI & trợ lý quản trị danh mục vốn cho nhà đầu tư.
+              </p>
+            </div>
+
+            {/* Quick Market Pulse */}
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <div className="px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Số mã theo dõi:</span>
+                <strong className="text-white text-sm">{allStocks.length || 408} mã</strong>
+              </div>
+              <div className="px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Dữ liệu nguồn:</span>
+                <strong className="text-emerald-400 text-sm flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  HOSE / HNX
+                </strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mode Switcher Navigation (Segmented Pill Dock) */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 relative z-10">
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-slate-800/90 w-fit shadow-xl">
           <button
             onClick={() => setActiveTab('RADAR')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
               activeTab === 'RADAR'
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-lg shadow-blue-500/25 border border-blue-400/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
             }`}
           >
             <Sparkles className="w-4 h-4 text-amber-300" />
@@ -126,32 +176,32 @@ export default function Home() {
 
           <button
             onClick={() => setActiveTab('SSIBOARD')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
               activeTab === 'SSIBOARD'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-lg shadow-blue-500/25 border border-blue-400/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
             }`}
           >
-            <BarChart3 className="w-4 h-4" />
+            <BarChart3 className="w-4 h-4 text-cyan-300" />
             Bảng Giá Trực Tuyến SSI (VN-Index)
           </button>
 
           <button
             onClick={() => setActiveTab('NEWS_PORTFOLIO')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
               activeTab === 'NEWS_PORTFOLIO'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-lg shadow-blue-500/25 border border-blue-400/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
             }`}
           >
-            <Newspaper className="w-4 h-4" />
+            <Newspaper className="w-4 h-4 text-emerald-300" />
             Tin Tức Kinh Tế & Danh Mục Cá Nhân
           </button>
         </div>
       </div>
 
       {/* Main Content Layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 relative z-10">
         
         {/* VIEW 1: RADAR CỔ PHIẾU TIỀM NĂNG & ĐỘT BIẾN */}
         {activeTab === 'RADAR' && (
@@ -180,7 +230,7 @@ export default function Home() {
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   📰 Bảng Tin Kinh Tế & Thị Trường
                 </h2>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-400 font-mono">
                   Hiển thị {articles.length} bản tin mới nhất
                 </span>
               </div>
@@ -205,6 +255,18 @@ export default function Home() {
           />
         )}
       </main>
+
+      {/* Footer Branding */}
+      <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-12 border-t border-slate-900 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-slate-300">VNStock Terminal</span>
+          <span>© 2026. Thiết kế chuyên sâu theo chuẩn phân tích tài chính Việt Nam.</span>
+        </div>
+        <div className="flex items-center gap-4 text-[11px]">
+          <span>Dữ liệu: SSI iBoard & Sở GDCK</span>
+          <span>● Hệ thống đang hoạt động</span>
+        </div>
+      </footer>
     </div>
   );
 }
