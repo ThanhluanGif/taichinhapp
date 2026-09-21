@@ -17,30 +17,63 @@ import {
   Sparkles,
   Building2,
   Check,
+  History,
+  ChevronDown,
+  ChevronUp,
+  Calculator,
+  Calendar,
+  Layers,
 } from 'lucide-react';
+
+// Chi tiết từng phiên / đợt mua cổ phiếu
+export interface BuySession {
+  id: string;
+  shares: number;        // Số lượng mua phiên này (CP)
+  buyPrice: number;      // Giá mua phiên này (VNĐ)
+  date: string;          // Ngày / Phiên mua (VD: 22/09/2026)
+  note?: string;         // Ghi chú (VD: Mua mở vị thế, Mua gom thêm, v.v.)
+}
 
 export interface PortfolioStock {
   id: string;
   symbol: string;
-  name: string;            // Tên doanh nghiệp đầy đủ
-  shares: number;          // Số lượng cổ phiếu đang có
-  buyPrice: number;        // Giá vốn khi mua (VNĐ - người dùng tự nhập)
-  currentPrice: number;    // Giá hiện tại tự động cập nhật Realtime từ sàn (VNĐ)
+  name: string;               // Tên doanh nghiệp đầy đủ
+  orders: BuySession[];       // Danh sách các phiên mua
+  shares: number;             // Tổng số lượng cổ phiếu đang có (tổng các phiên)
+  buyPrice: number;           // Giá vốn trung bình (VNĐ - bình quân gia quyền)
+  currentPrice: number;       // Giá hiện tại tự động cập nhật Realtime từ sàn (VNĐ)
   stopLossPercent?: number;   // % Cắt lỗ (Mặc định -7%)
   takeProfitPercent?: number; // % Chốt lãi (Mặc định +18%)
-  lastUpdated?: string;    // Thời gian cập nhật giá
+  lastUpdated?: string;       // Thời gian cập nhật giá
 }
 
+// Dữ liệu mẫu ban đầu minh họa rõ nét tính năng mua nhiều phiên tính giá trung bình
 const INITIAL_PORTFOLIO: PortfolioStock[] = [
   {
     id: '1',
     symbol: 'FPT',
     name: 'Công ty Cổ phần FPT',
-    shares: 1000,
-    buyPrice: 125000,
+    shares: 1500,
+    buyPrice: 124000,
     currentPrice: 135000,
     stopLossPercent: 7,
     takeProfitPercent: 18,
+    orders: [
+      {
+        id: 'fpt-1',
+        shares: 1000,
+        buyPrice: 120000,
+        date: '10/09/2026',
+        note: 'Mua mở vị thế ban đầu',
+      },
+      {
+        id: 'fpt-2',
+        shares: 500,
+        buyPrice: 132000,
+        date: '18/09/2026',
+        note: 'Mua gia tăng khi vượt đỉnh',
+      },
+    ],
   },
   {
     id: '2',
@@ -51,6 +84,22 @@ const INITIAL_PORTFOLIO: PortfolioStock[] = [
     currentPrice: 26800,
     stopLossPercent: 7,
     takeProfitPercent: 18,
+    orders: [
+      {
+        id: 'hpg-1',
+        shares: 1000,
+        buyPrice: 29500,
+        date: '05/09/2026',
+        note: 'Mua gom lần 1',
+      },
+      {
+        id: 'hpg-2',
+        shares: 1000,
+        buyPrice: 27500,
+        date: '15/09/2026',
+        note: 'Mua trung bình giá hạ giá vốn',
+      },
+    ],
   },
   {
     id: '3',
@@ -61,6 +110,15 @@ const INITIAL_PORTFOLIO: PortfolioStock[] = [
     currentPrice: 92500,
     stopLossPercent: 7,
     takeProfitPercent: 18,
+    orders: [
+      {
+        id: 'vcb-1',
+        shares: 500,
+        buyPrice: 88000,
+        date: '12/09/2026',
+        note: 'Mua tích lũy dài hạn',
+      },
+    ],
   },
 ];
 
@@ -72,27 +130,71 @@ interface Props {
   profiles?: Record<string, CompanyProfile>;
 }
 
+// Hàm tính bình quân gia quyền giá vốn
+export const computeWeightedAverage = (orders: BuySession[]) => {
+  const totalShares = orders.reduce((sum, o) => sum + (Number(o.shares) || 0), 0);
+  const totalCost = orders.reduce((sum, o) => sum + (Number(o.shares) || 0) * (Number(o.buyPrice) || 0), 0);
+  const avgBuyPrice = totalShares > 0 ? Math.round(totalCost / totalShares) : 0;
+  return { totalShares, totalCost, avgBuyPrice };
+};
+
 export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }) => {
   const [portfolio, setPortfolio] = useState<PortfolioStock[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
 
-  // Form states
+  // Form states cho thêm mã mới
   const [showAddForm, setShowAddForm] = useState(false);
   const [symbol, setSymbol] = useState('');
   const [shares, setShares] = useState('');
   const [buyPrice, setBuyPrice] = useState('');
+  const [buyDate, setBuyDate] = useState(() => new Date().toLocaleDateString('vi-VN'));
+  const [note, setNote] = useState('');
   const [stopLoss, setStopLoss] = useState('7');
   const [takeProfit, setTakeProfit] = useState('18');
   const [detectedStock, setDetectedStock] = useState<StockQuote | null>(null);
 
-  // 1. Tải danh mục từ LocalStorage khi khởi động
+  // State quản lý xem lịch sử phiên mua & modal mua thêm từng mã
+  const [expandedStockId, setExpandedStockId] = useState<string | null>(null);
+  const [addingSessionStockId, setAddingSessionStockId] = useState<string | null>(null);
+  const [newSessionShares, setNewSessionShares] = useState('');
+  const [newSessionPrice, setNewSessionPrice] = useState('');
+  const [newSessionDate, setNewSessionDate] = useState(() => new Date().toLocaleDateString('vi-VN'));
+  const [newSessionNote, setNewSessionNote] = useState('');
+
+  // 1. Tải danh mục từ LocalStorage khi khởi động (tự động migrate định dạng nếu có phiên bản cũ)
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('personal_portfolio_v3');
+      const saved = localStorage.getItem('personal_portfolio_v4');
       if (saved) {
-        setPortfolio(JSON.parse(saved));
+        const parsed: PortfolioStock[] = JSON.parse(saved);
+        // Kiểm tra và migrate đảm bảo có mảng orders
+        const migrated = parsed.map((item) => {
+          if (!item.orders || item.orders.length === 0) {
+            const fallbackOrder: BuySession = {
+              id: 'init-' + item.id,
+              shares: item.shares || 1000,
+              buyPrice: item.buyPrice || 100000,
+              date: 'Phiên 1',
+              note: 'Mua lần đầu',
+            };
+            return {
+              ...item,
+              orders: [fallbackOrder],
+              shares: fallbackOrder.shares,
+              buyPrice: fallbackOrder.buyPrice,
+            };
+          }
+          // Tính lại giá bình quân chuẩn xác
+          const { totalShares, avgBuyPrice } = computeWeightedAverage(item.orders);
+          return {
+            ...item,
+            shares: totalShares,
+            buyPrice: avgBuyPrice,
+          };
+        });
+        setPortfolio(migrated);
       } else {
         setPortfolio(INITIAL_PORTFOLIO);
       }
@@ -181,7 +283,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
           }
         }
       } catch {
-        // bỏ qua lỗi mạng tạm thời
+        // ignore network error
       }
     }, 20000);
 
@@ -212,11 +314,11 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
   // Lưu vào LocalStorage khi danh mục thay đổi
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('personal_portfolio_v3', JSON.stringify(portfolio));
+      localStorage.setItem('personal_portfolio_v4', JSON.stringify(portfolio));
     }
   }, [portfolio, isLoaded]);
 
-  // Tính toán chỉ số tài chính tổng hợp
+  // Tính toán chỉ số tài chính tổng hợp toàn danh mục
   const totalCost = useMemo(
     () => portfolio.reduce((acc, item) => acc + item.shares * item.buyPrice, 0),
     [portfolio]
@@ -228,22 +330,19 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
   const totalProfitLoss = totalCurrentValue - totalCost;
   const totalProfitLossPercent = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
 
-  // Xử lý khi người dùng nhập hoặc chọn mã cổ phiếu
+  // Xử lý khi người dùng chọn mã cổ phiếu ở form tổng
   const handleSelectSymbol = (sym: string) => {
     const clean = sym.toUpperCase().trim();
     setSymbol(clean);
     const { stockMatch, livePrice } = resolveStockInfo(clean);
     setDetectedStock(stockMatch || null);
 
-    // Nếu người dùng chưa gõ giá mua, có thể gợi ý giá hiện tại
     if (livePrice > 0 && !buyPrice) {
       setBuyPrice(livePrice.toString());
     }
   };
 
-  // Xử lý thêm cổ phiếu vào sổ lệnh
-  // Lưu ý quan trọng: Người dùng CHỈ nhập Số lượng và Giá vốn mua.
-  // Giá hiện tại sẽ TỰ ĐỘNG lấy từ sàn và TỰ ĐỘNG cập nhật liên tục!
+  // Thêm một mã mới hoặc cộng dồn phiên mua vào mã đã có
   const handleAddStock = (e: React.FormEvent) => {
     e.preventDefault();
     if (!symbol || !shares || !buyPrice) return;
@@ -251,30 +350,134 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
     const cleanSymbol = symbol.toUpperCase().trim();
     const { companyName, livePrice } = resolveStockInfo(cleanSymbol);
 
+    const inputShares = parseFloat(shares);
     const inputBuyPrice = parseFloat(buyPrice);
-    // Giá hiện tại tự động lấy từ sàn, nếu chưa có thì lấy tạm giá mua và sẽ tự cập nhật khi có data
     const initialCurrentPrice = livePrice > 0 ? livePrice : inputBuyPrice;
 
-    const newStock: PortfolioStock = {
+    // Kiểm tra xem mã này đã có trong danh mục chưa
+    const existingIndex = portfolio.findIndex((p) => p.symbol.toUpperCase() === cleanSymbol);
+
+    const newOrder: BuySession = {
       id: Date.now().toString(),
-      symbol: cleanSymbol,
-      name: companyName,
-      shares: parseFloat(shares),
+      shares: inputShares,
       buyPrice: inputBuyPrice,
-      currentPrice: initialCurrentPrice,
-      stopLossPercent: parseFloat(stopLoss) || 7,
-      takeProfitPercent: parseFloat(takeProfit) || 18,
-      lastUpdated: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      date: buyDate || new Date().toLocaleDateString('vi-VN'),
+      note: note || `Phiên mua ${existingIndex >= 0 ? portfolio[existingIndex].orders.length + 1 : 1}`,
     };
 
-    setPortfolio([newStock, ...portfolio]);
+    if (existingIndex >= 0) {
+      // Đã có mã: Cộng dồn phiên mua và tính lại giá vốn trung bình
+      const existing = portfolio[existingIndex];
+      const updatedOrders = [...existing.orders, newOrder];
+      const { totalShares, avgBuyPrice } = computeWeightedAverage(updatedOrders);
+
+      const updatedItem: PortfolioStock = {
+        ...existing,
+        name: companyName || existing.name,
+        orders: updatedOrders,
+        shares: totalShares,
+        buyPrice: avgBuyPrice,
+        currentPrice: existing.currentPrice > 0 ? existing.currentPrice : initialCurrentPrice,
+        lastUpdated: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      };
+
+      const newPortfolio = [...portfolio];
+      newPortfolio[existingIndex] = updatedItem;
+      setPortfolio(newPortfolio);
+    } else {
+      // Mã mới hoàn toàn
+      const newStock: PortfolioStock = {
+        id: Date.now().toString(),
+        symbol: cleanSymbol,
+        name: companyName,
+        orders: [newOrder],
+        shares: inputShares,
+        buyPrice: inputBuyPrice,
+        currentPrice: initialCurrentPrice,
+        stopLossPercent: parseFloat(stopLoss) || 7,
+        takeProfitPercent: parseFloat(takeProfit) || 18,
+        lastUpdated: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      };
+
+      setPortfolio([newStock, ...portfolio]);
+    }
+
     setSymbol('');
     setShares('');
     setBuyPrice('');
+    setNote('');
     setDetectedStock(null);
     setShowAddForm(false);
   };
 
+  // Thêm một phiên mua mới trực tiếp trên thẻ cổ phiếu cụ thể
+  const handleAddSessionToStock = (stockId: string) => {
+    if (!newSessionShares || !newSessionPrice) return;
+
+    const stock = portfolio.find((s) => s.id === stockId);
+    if (!stock) return;
+
+    const newOrder: BuySession = {
+      id: Date.now().toString(),
+      shares: parseFloat(newSessionShares),
+      buyPrice: parseFloat(newSessionPrice),
+      date: newSessionDate || new Date().toLocaleDateString('vi-VN'),
+      note: newSessionNote || `Phiên mua #${stock.orders.length + 1}`,
+    };
+
+    const updatedOrders = [...stock.orders, newOrder];
+    const { totalShares, avgBuyPrice } = computeWeightedAverage(updatedOrders);
+
+    const updatedPortfolio = portfolio.map((item) => {
+      if (item.id === stockId) {
+        return {
+          ...item,
+          orders: updatedOrders,
+          shares: totalShares,
+          buyPrice: avgBuyPrice,
+          lastUpdated: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        };
+      }
+      return item;
+    });
+
+    setPortfolio(updatedPortfolio);
+    setAddingSessionStockId(null);
+    setNewSessionShares('');
+    setNewSessionPrice('');
+    setNewSessionNote('');
+  };
+
+  // Xóa một phiên mua cụ thể trong lịch sử
+  const handleDeleteSession = (stockId: string, orderId: string) => {
+    const stock = portfolio.find((s) => s.id === stockId);
+    if (!stock) return;
+
+    const remainingOrders = stock.orders.filter((o) => o.id !== orderId);
+    if (remainingOrders.length === 0) {
+      // Nếu xóa hết phiên mua thì xóa cả mã
+      setPortfolio(portfolio.filter((s) => s.id !== stockId));
+      return;
+    }
+
+    const { totalShares, avgBuyPrice } = computeWeightedAverage(remainingOrders);
+
+    const updatedPortfolio = portfolio.map((item) => {
+      if (item.id === stockId) {
+        return {
+          ...item,
+          orders: remainingOrders,
+          shares: totalShares,
+          buyPrice: avgBuyPrice,
+        };
+      }
+      return item;
+    });
+
+    setPortfolio(updatedPortfolio);
+  };
+
+  // Xóa toàn bộ mã khỏi danh mục
   const handleDeleteStock = (id: string) => {
     setPortfolio(portfolio.filter((item) => item.id !== id));
   };
@@ -292,7 +495,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
   return (
     <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl p-4 sm:p-5 space-y-4 text-xs font-sans">
       
-      {/* 1. TOP HEADER & REALTIME STATUS */}
+      {/* 1. TOP HEADER & STATUS */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800">
         <div className="flex items-center space-x-3">
           <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center font-bold shadow-inner">
@@ -301,7 +504,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-white tracking-tight">
-                Danh Mục Cổ Phiếu Đang Giữ
+                Danh Mục Cổ Phiếu (Giá Vốn TB)
               </h3>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -309,7 +512,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Giá hiện tại tự động cập nhật từ sàn SSI & VN-Index
+              Hỗ trợ mua nhiều phiên (DCA) & Tự động cập nhật giá sàn
               {lastSyncTime && <span className="text-slate-500 ml-1">({lastSyncTime})</span>}
             </p>
           </div>
@@ -329,22 +532,22 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
             onClick={() => setShowAddForm(!showAddForm)}
             className="inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-md shadow-blue-600/30"
           >
-            <Plus className="w-3.5 h-3.5" /> Thêm mã
+            <Plus className="w-3.5 h-3.5" /> Thêm mã mua
           </button>
         </div>
       </div>
 
-      {/* 2. TỔNG QUAN TÀI CHÍNH TỔNG VỐN & LÃI/LỖ */}
+      {/* 2. TỔNG QUAN VỐN & LÃI/LỖ */}
       <div className="grid grid-cols-2 gap-2.5">
         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 shadow-sm">
           <span className="text-[11px] font-medium text-slate-400 block mb-0.5">
-            Tổng Vốn Đầu Tư (Giá mua)
+            Tổng Vốn Đầu Tư (Tất cả phiên)
           </span>
           <span className="text-sm font-bold text-slate-100 block font-mono">
             {formatVND(totalCost)}
           </span>
           <span className="text-[10px] text-slate-500 mt-0.5 block">
-            {portfolio.length} mã trong sổ lệnh
+            {portfolio.length} mã cổ phiếu đang nắm giữ
           </span>
         </div>
 
@@ -371,7 +574,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
         </div>
       </div>
 
-      {/* 3. FORM THÊM CỔ PHIẾU VÀO DANH MỤC */}
+      {/* 3. FORM THÊM CỔ PHIẾU / PHIÊN MUA MỚI */}
       {showAddForm && (
         <form
           onSubmit={handleAddStock}
@@ -379,16 +582,16 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
         >
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <span className="font-bold text-blue-400 flex items-center gap-1.5 text-xs">
-              <Sparkles className="w-3.5 h-3.5" /> Thêm cổ phiếu vào danh mục
+              <Sparkles className="w-3.5 h-3.5" /> Thêm cổ phiếu / Phiên mua mới
             </span>
             <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-medium">
-              ✓ Giá hiện tại sẽ tự động cập nhật
+              ✓ Tự động tính giá vốn trung bình (DCA)
             </span>
           </div>
 
           {/* Quick Select Chips */}
           <div>
-            <span className="text-[10px] text-slate-400 block mb-1.5">Chọn nhanh mã VN30 tiêu biểu:</span>
+            <span className="text-[10px] text-slate-400 block mb-1.5">Chọn nhanh mã VN30:</span>
             <div className="flex flex-wrap gap-1">
               {POPULAR_SYMBOLS.map((sym) => (
                 <button
@@ -411,7 +614,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
             {/* Input 1: Mã cổ phiếu */}
             <div>
               <label className="text-[11px] font-medium text-slate-300 block mb-1">
-                Mã cổ phiếu (3 chữ cái):
+                Mã cổ phiếu:
               </label>
               <input
                 type="text"
@@ -423,10 +626,10 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               />
             </div>
 
-            {/* Input 2: Số lượng đang có */}
+            {/* Input 2: Số lượng mua phiên này */}
             <div>
               <label className="text-[11px] font-medium text-slate-300 block mb-1">
-                Số lượng đang có (cổ phiếu):
+                Số lượng mua phiên này (CP):
               </label>
               <input
                 type="number"
@@ -440,11 +643,11 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               />
             </div>
 
-            {/* Input 3: Giá vốn khi mua */}
+            {/* Input 3: Giá mua phiên này */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[11px] font-medium text-slate-300">
-                  Giá vốn khi mua (VNĐ):
+                  Giá mua phiên này (VNĐ):
                 </label>
                 {detectedStock && detectedStock.matchedPrice > 0 && (
                   <button
@@ -468,57 +671,36 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               />
             </div>
 
-            {/* Input 4: Cắt lỗ & Chốt lãi (%) */}
+            {/* Input 4: Ngày mua & Ghi chú */}
             <div>
               <label className="text-[11px] font-medium text-slate-300 block mb-1">
-                Mục tiêu Cắt lỗ / Chốt lãi (%):
+                Ngày mua & Ghi chú phiên:
               </label>
               <div className="flex gap-2">
-                <div className="relative w-1/2">
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    title="% Cắt lỗ"
-                    value={stopLoss}
-                    onChange={(e) => setStopLoss(e.target.value)}
-                    className="w-full p-2.5 rounded-lg bg-slate-900 border border-rose-900/60 text-rose-400 font-mono font-bold text-center focus:outline-none"
-                  />
-                  <span className="absolute right-2 top-2.5 text-[10px] text-rose-500">-% SL</span>
-                </div>
-                <div className="relative w-1/2">
-                  <input
-                    type="number"
-                    min="1"
-                    max="200"
-                    title="% Chốt lãi"
-                    value={takeProfit}
-                    onChange={(e) => setTakeProfit(e.target.value)}
-                    className="w-full p-2.5 rounded-lg bg-slate-900 border border-emerald-900/60 text-emerald-400 font-mono font-bold text-center focus:outline-none"
-                  />
-                  <span className="absolute right-2 top-2.5 text-[10px] text-emerald-500">+% TP</span>
-                </div>
+                <input
+                  type="text"
+                  placeholder="Ngày mua (VD: 22/09)"
+                  value={buyDate}
+                  onChange={(e) => setBuyDate(e.target.value)}
+                  className="w-1/2 p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Ghi chú (VD: Lần 1, Mua gom...)"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  className="w-1/2 p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none"
+                />
               </div>
             </div>
           </div>
 
-          {/* Thông tin tra cứu tự động */}
-          {symbol && (
-            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center justify-between text-[11px]">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                <div>
-                  <span className="font-bold text-white">{resolveStockInfo(symbol).companyName}</span>
-                  <span className="text-slate-400 block text-[10px]">Doanh nghiệp niêm yết</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-slate-400 block text-[10px]">Giá sàn Realtime:</span>
-                <span className="font-bold text-emerald-400 font-mono text-xs">
-                  {detectedStock && detectedStock.matchedPrice > 0
-                    ? `${formatVND(detectedStock.matchedPrice)} (${formatBoardPrice(detectedStock.matchedPrice)})`
-                    : 'Đang cập nhật...'}
-                </span>
+          {/* Thông báo thông minh nếu mã đã có trong danh mục */}
+          {symbol && portfolio.some((p) => p.symbol.toUpperCase() === symbol.toUpperCase().trim()) && (
+            <div className="p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-500/40 text-[11px] text-indigo-300 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+              <div>
+                <strong>Mã {symbol.toUpperCase()} đã có trong danh mục!</strong> Phiên này sẽ được cộng dồn vào các phiên trước và tự động tính lại <strong>Giá vốn trung bình</strong> mới.
               </div>
             </div>
           )}
@@ -538,13 +720,13 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               type="submit"
               className="px-5 py-1.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-500 shadow-md transition-colors"
             >
-              Lưu vào danh mục
+              Lưu phiên mua
             </button>
           </div>
         </form>
       )}
 
-      {/* 4. DANH SÁCH CÁC MÃ CỔ PHIẾU ĐANG CÓ TRONG SỔ LỆNH */}
+      {/* 4. DANH SÁCH CỔ PHIẾU VỚI GIÁ VỐN TRUNG BÌNH & CÁC PHIÊN MUA */}
       <div className="space-y-3">
         {portfolio.length === 0 ? (
           <div className="text-center py-8 px-4 border border-dashed border-slate-800 rounded-xl">
@@ -553,7 +735,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
               Chưa có mã cổ phiếu nào trong danh mục.
             </p>
             <p className="text-[11px] text-slate-500 mt-1">
-              Nhấn &quot;Thêm mã&quot; ở trên để nhập số lượng và giá vốn ban đầu.
+              Nhấn &quot;Thêm mã mua&quot; ở trên để bắt đầu theo dõi.
             </p>
           </div>
         ) : (
@@ -564,15 +746,28 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
             const profitLossPercent = costVal > 0 ? (profitLoss / costVal) * 100 : 0;
             const isGain = profitLoss >= 0;
 
-            // Tính điểm cắt lỗ & chốt lời theo giá vốn mua
+            // Tính điểm cắt lỗ & chốt lời theo GIÁ VỐN TRUNG BÌNH
             const slPercent = item.stopLossPercent || 7;
             const tpPercent = item.takeProfitPercent || 18;
-            const stopLossPrice = item.buyPrice * (1 - slPercent / 100);
-            const takeProfitPrice = item.buyPrice * (1 + tpPercent / 100);
+            const stopLossPrice = Math.round(item.buyPrice * (1 - slPercent / 100));
+            const takeProfitPrice = Math.round(item.buyPrice * (1 + tpPercent / 100));
 
-            // Kiểm tra trạng thái cắt lỗ / chốt lãi
             const isStopLossTriggered = item.currentPrice <= stopLossPrice;
             const isTakeProfitTriggered = item.currentPrice >= takeProfitPrice;
+
+            const isExpanded = expandedStockId === item.id;
+            const isAddingSession = addingSessionStockId === item.id;
+
+            // Preview giá trung bình mới khi đang nhập thêm phiên
+            const previewNewAvg = (() => {
+              if (!newSessionShares || !newSessionPrice || !isAddingSession) return null;
+              const addShares = parseFloat(newSessionShares) || 0;
+              const addPrice = parseFloat(newSessionPrice) || 0;
+              if (addShares <= 0 || addPrice <= 0) return null;
+              const newTotalShares = item.shares + addShares;
+              const newTotalCost = costVal + addShares * addPrice;
+              return Math.round(newTotalCost / newTotalShares);
+            })();
 
             return (
               <div
@@ -585,7 +780,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                     : 'bg-slate-950/90 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                {/* Header dòng 1: Mã CP, Tên Doanh Nghiệp & Lãi/Lỗ */}
+                {/* Dòng 1: Mã CP, Tên Doanh Nghiệp, Số lượng tổng & Lãi/Lỗ */}
                 <div className="flex items-start justify-between gap-2 mb-2.5">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -593,16 +788,19 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                         {item.symbol}
                       </span>
                       <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold border border-blue-500/20">
-                        {item.shares.toLocaleString('vi-VN')} CP
+                        Tổng: {item.shares.toLocaleString('vi-VN')} CP
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                        {item.orders.length} phiên mua
                       </span>
                     </div>
-                    {/* Tên đầy đủ của doanh nghiệp */}
+                    {/* Tên đầy đủ doanh nghiệp */}
                     <div className="text-xs font-semibold text-slate-300 mt-1 truncate" title={item.name}>
                       {item.name}
                     </div>
                   </div>
 
-                  {/* Lãi / Lỗ Realtime */}
+                  {/* Lãi / Lỗ Realtime tính theo Giá vốn trung bình */}
                   <div className="text-right flex-shrink-0">
                     <div className="font-bold text-xs font-mono">
                       {isGain ? (
@@ -621,13 +819,14 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                   </div>
                 </div>
 
-                {/* Hộp so sánh: Giá Vốn Khi Mua vs Giá Hiện Tại (Realtime) */}
+                {/* Hộp so sánh: GIÁ VỐN TRUNG BÌNH vs GIÁ SÀN REALTIME */}
                 <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-slate-900/90 border border-slate-800/80 mb-2.5">
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-medium">
-                      Giá vốn khi mua:
-                    </span>
-                    <div className="font-bold text-slate-200 font-mono text-xs">
+                    <div className="flex items-center gap-1 text-[10px] text-indigo-300 font-medium">
+                      <Calculator className="w-3 h-3 text-indigo-400" />
+                      <span>Giá vốn trung bình:</span>
+                    </div>
+                    <div className="font-bold text-slate-100 font-mono text-xs mt-0.5">
                       {formatVND(item.buyPrice)}
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">
@@ -640,7 +839,7 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       <span>Giá hiện tại (Realtime):</span>
                     </div>
-                    <div className={`font-bold font-mono text-xs ${isGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`font-bold font-mono text-xs mt-0.5 ${isGain ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {formatVND(item.currentPrice)}
                     </div>
                     <span className="text-[10px] text-slate-500 font-mono">
@@ -655,12 +854,12 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                   <span>Hiện tại: <strong className="text-slate-200">{formatVND(currentVal)}</strong></span>
                 </div>
 
-                {/* Kế hoạch Cắt Lỗ (-7%) & Chốt Lãi (+18%) */}
+                {/* Kế hoạch Cắt Lỗ (-7%) & Chốt Lãi (+18%) theo Giá TB */}
                 <div className="space-y-1.5 pt-2 border-t border-slate-800/80 text-[10px]">
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 flex items-center gap-1 font-sans">
                       <ShieldAlert className="w-3 h-3 text-rose-400" />
-                      Điểm cắt lỗ:
+                      Cắt lỗ (từ Giá TB):
                     </span>
                     <strong className="text-rose-400 font-mono">
                       {formatVND(stopLossPrice)} (-{slPercent}%)
@@ -670,45 +869,205 @@ export const PortfolioTracker: React.FC<Props> = ({ stocks = [], profiles = {} }
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 flex items-center gap-1 font-sans">
                       <Target className="w-3 h-3 text-emerald-400" />
-                      Điểm chốt lời:
+                      Chốt lời (từ Giá TB):
                     </span>
                     <strong className="text-emerald-400 font-mono">
                       {formatVND(takeProfitPrice)} (+{tpPercent}%)
                     </strong>
                   </div>
 
-                  {/* Khuyến nghị hành động trực quan */}
+                  {/* Thanh nút công cụ: + Mua thêm phiên mới | Xem lịch sử các phiên | Xóa */}
                   <div className="pt-2 flex items-center justify-between gap-2">
-                    {isStopLossTriggered ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold text-[10px] animate-pulse">
-                        <AlertTriangle className="w-3 h-3" />
-                        🚨 Cắt lỗ ngay để bảo toàn vốn!
-                      </span>
-                    ) : isTakeProfitTriggered ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-[10px]">
-                        <CheckCircle2 className="w-3 h-3" />
-                        🎯 Đạt mục tiêu: Chốt lời từng phần!
-                      </span>
-                    ) : isGain ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-400 font-medium text-[10px]">
-                        <Check className="w-3 h-3" />
-                        Đang có lãi - Tiếp tục nắm giữ
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-slate-400 text-[10px]">
-                        Vùng an toàn - Tiếp tục quan sát
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setAddingSessionStockId(isAddingSession ? null : item.id);
+                          setNewSessionShares('');
+                          setNewSessionPrice(item.currentPrice > 0 ? item.currentPrice.toString() : '');
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 border border-blue-500/30 text-[10px] font-bold transition-colors"
+                      >
+                        <Plus className="w-3 h-3" /> Mua thêm phiên
+                      </button>
 
-                    <button
-                      onClick={() => handleDeleteStock(item.id)}
-                      className="text-slate-500 hover:text-rose-400 p-1 transition-colors rounded hover:bg-slate-800"
-                      title="Xóa mã này khỏi danh mục"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      <button
+                        onClick={() => setExpandedStockId(isExpanded ? null : item.id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 text-[10px] transition-colors"
+                      >
+                        <History className="w-3 h-3 text-slate-400" />
+                        Lịch sử ({item.orders.length})
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {isStopLossTriggered ? (
+                        <span className="text-rose-400 font-bold text-[10px] animate-pulse">
+                          🚨 Cắt lỗ ngay!
+                        </span>
+                      ) : isTakeProfitTriggered ? (
+                        <span className="text-emerald-300 font-bold text-[10px]">
+                          🎯 Chốt lời!
+                        </span>
+                      ) : null}
+
+                      <button
+                        onClick={() => handleDeleteStock(item.id)}
+                        className="text-slate-500 hover:text-rose-400 p-1 transition-colors rounded hover:bg-slate-800"
+                        title="Xóa toàn bộ mã này khỏi danh mục"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* FORM NHẬP THÊM PHIÊN MUA MỚI CHO RIÊNG MÃ NÀY */}
+                {isAddingSession && (
+                  <div className="mt-3 p-3 bg-slate-900 rounded-lg border border-blue-500/30 space-y-2.5 animate-fadeIn">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-blue-400">
+                      <span>+ Mua thêm cổ phiếu {item.symbol}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Tự tính lại giá vốn trung bình</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Số lượng mua thêm:</label>
+                        <input
+                          type="number"
+                          placeholder="VD: 500"
+                          value={newSessionShares}
+                          onChange={(e) => setNewSessionShares(e.target.value)}
+                          className="w-full p-2 rounded bg-slate-950 border border-slate-700 text-white font-mono text-xs focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-0.5">
+                          <label className="text-[10px] text-slate-400">Giá mua phiên này:</label>
+                          {item.currentPrice > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setNewSessionPrice(item.currentPrice.toString())}
+                              className="text-[9px] text-blue-400 hover:underline"
+                            >
+                              Lấy giá sàn
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          placeholder="VD: 132000"
+                          value={newSessionPrice}
+                          onChange={(e) => setNewSessionPrice(e.target.value)}
+                          className="w-full p-2 rounded bg-slate-950 border border-slate-700 text-white font-mono text-xs focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Ngày mua:</label>
+                        <input
+                          type="text"
+                          value={newSessionDate}
+                          onChange={(e) => setNewSessionDate(e.target.value)}
+                          className="w-full p-2 rounded bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Ghi chú:</label>
+                        <input
+                          type="text"
+                          placeholder="VD: Mua gia tăng, Mua gom..."
+                          value={newSessionNote}
+                          onChange={(e) => setNewSessionNote(e.target.value)}
+                          className="w-full p-2 rounded bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Preview kết quả giá vốn trung bình sau khi mua */}
+                    {previewNewAvg && (
+                      <div className="p-2 rounded bg-indigo-950/30 border border-indigo-500/20 text-[10px] text-indigo-300 flex items-center justify-between">
+                        <span>Giá vốn TB dự kiến sau mua:</span>
+                        <strong className="text-white font-mono">
+                          {formatVND(previewNewAvg)} (tổng {(item.shares + (parseFloat(newSessionShares) || 0)).toLocaleString()} CP)
+                        </strong>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setAddingSessionStockId(null)}
+                        className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 text-[10px]"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddSessionToStock(item.id)}
+                        className="px-3 py-1 rounded bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-500"
+                      >
+                        Xác nhận mua thêm
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* BẢNG CHI TIẾT CÁC PHIÊN MUA (EXPANDED) */}
+                {isExpanded && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+                      <span className="flex items-center gap-1">
+                        <History className="w-3.5 h-3.5 text-blue-400" />
+                        Lịch sử {item.orders.length} phiên mua:
+                      </span>
+                      <span className="text-[10px] text-slate-500">Bình quân gia quyền</span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {item.orders.map((order, idx) => (
+                        <div
+                          key={order.id}
+                          className="p-2 rounded bg-slate-900 border border-slate-800 flex items-center justify-between text-[10px]"
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-blue-400">#{idx + 1}</span>
+                              <span className="text-slate-400 flex items-center gap-1">
+                                <Calendar className="w-2.5 h-2.5 text-slate-500" /> {order.date}
+                              </span>
+                              {order.note && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">
+                                  {order.note}
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-mono text-slate-300">
+                              {order.shares.toLocaleString()} CP @ {formatVND(order.buyPrice)}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-200">
+                              {formatVND(order.shares * order.buyPrice)}
+                            </span>
+                            {item.orders.length > 1 && (
+                              <button
+                                onClick={() => handleDeleteSession(item.id, order.id)}
+                                className="text-slate-500 hover:text-rose-400 p-0.5"
+                                title="Xóa phiên mua này"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
