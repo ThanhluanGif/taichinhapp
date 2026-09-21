@@ -80,23 +80,20 @@ def fetch_all_news():
 
     print(f"\n🎉 TỔNG CỘNG: Thu thập thành công {len(articles)} bài viết mới nhất!")
     
-    # Save to JSON storage for local fallback
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
-    os.makedirs(data_dir, exist_ok=True)
-    json_path = os.path.join(data_dir, "news.json")
+    # Save to JSON storage inside public/data/news.json at root
+    public_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../public/data"))
+    os.makedirs(public_data_dir, exist_ok=True)
+    json_path = os.path.join(public_data_dir, "news.json")
     
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(articles, f, ensure_ascii=False, indent=2)
     print(f"💾 Đã lưu dữ liệu tại: {json_path}")
-    
-    # Sync to web-app public folder if available
-    web_app_public = os.path.abspath(os.path.join(os.path.dirname(__file__), "../web-app/public/data"))
-    if os.path.exists(os.path.dirname(web_app_public)):
-        os.makedirs(web_app_public, exist_ok=True)
-        web_json_path = os.path.join(web_app_public, "news.json")
-        with open(web_json_path, "w", encoding="utf-8") as f:
-            json.dump(articles, f, ensure_ascii=False, indent=2)
-        print(f"🔄 Đã đồng bộ sang Web App: {web_json_path}")
+
+    # Also save to scraper/data/news.json
+    scraper_data_dir = os.path.join(os.path.dirname(__file__), "data")
+    os.makedirs(scraper_data_dir, exist_ok=True)
+    with open(os.path.join(scraper_data_dir, "news.json"), "w", encoding="utf-8") as f:
+        json.dump(articles, f, ensure_ascii=False, indent=2)
 
     # Optional: Sync to Supabase if credentials exist
     supabase_url = os.getenv("SUPABASE_URL")

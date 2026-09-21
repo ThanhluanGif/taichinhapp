@@ -36,5 +36,5 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add web-app/public/data/news.json scraper/data/news.json || true
+          git add public/data/news.json scraper/data/news.json || true
           git diff --quiet && git diff --staged --quiet || (git commit -m "auto: Cập nhật tin tức RSS mới nhất [skip ci]" && git push)
