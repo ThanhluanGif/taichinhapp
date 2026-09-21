@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StockQuote, SectorKey, StocksDataPayload, MarketIndex } from '@/types/stock';
 import { NewsArticle } from '@/types';
+import { getBasePath } from '@/utils/path';
 import { StockDetailModal } from './StockDetailModal';
 import { MarketIndicesBar } from './MarketIndicesBar';
 import {
@@ -68,7 +69,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData, articles = [] }) => {
   const fetchStockData = async () => {
     setIsLoading(true);
     try {
-      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+      const basePath = getBasePath();
       const res = await fetch(`${basePath}/data/stocks.json?t=` + Date.now());
       if (res.ok) {
         const json: StocksDataPayload = await res.json();

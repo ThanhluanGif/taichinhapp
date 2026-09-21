@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { StockQuote, CompanyProfile } from '@/types/stock';
 import { NewsArticle } from '@/types';
+import { getBasePath } from '@/utils/path';
 import {
   X,
   TrendingUp,
@@ -35,7 +36,7 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
 
     const fetchProfile = async () => {
       try {
-        const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        const basePath = getBasePath();
         const res = await fetch(`${basePath}/data/company_profiles.json?t=` + Date.now());
         if (res.ok) {
           const profiles: Record<string, CompanyProfile> = await res.json();

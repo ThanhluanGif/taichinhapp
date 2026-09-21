@@ -9,6 +9,7 @@ import { StockRadar } from '@/components/StockRadar';
 import { StockDetailModal } from '@/components/StockDetailModal';
 import { NewsArticle } from '@/types';
 import { StockQuote, CompanyProfile, StocksDataPayload } from '@/types/stock';
+import { getBasePath } from '@/utils/path';
 import { BarChart3, Newspaper, Sparkles } from 'lucide-react';
 
 const SAMPLE_NEWS: NewsArticle[] = [
@@ -52,7 +53,7 @@ export default function Home() {
 
   const fetchData = async () => {
     setIsLoading(true);
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    const basePath = getBasePath();
     
     // 1. Fetch News
     try {
