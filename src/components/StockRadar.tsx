@@ -114,8 +114,13 @@ export const StockRadar: React.FC<Props> = ({
 
   const formatVND = (val: number) => {
     if (!val) return '-';
-    if (val >= 1000000000) return (val / 1000000000).toFixed(1) + ' Tỷ';
-    return val.toLocaleString('vi-VN');
+    return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + ' đ';
+  };
+
+  const formatBillion = (val: number) => {
+    if (!val) return '-';
+    if (val >= 1000000000) return (val / 1000000000).toFixed(1) + ' Tỷ VNĐ';
+    return val.toLocaleString('vi-VN') + ' đ';
   };
 
   return (
@@ -182,13 +187,13 @@ export const StockRadar: React.FC<Props> = ({
                 <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800/80 space-y-1 text-xs font-mono">
                   <div className="flex justify-between">
                     <span className="text-slate-400 font-sans">Giá hiện tại:</span>
-                    <strong className="text-white">{formatPrice(stock.matchedPrice)} đ</strong>
+                    <strong className="text-white">{formatVND(stock.matchedPrice)} <span className="text-[10px] text-slate-400 font-normal">({formatPrice(stock.matchedPrice)})</span></strong>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-emerald-400 font-sans flex items-center gap-1">
                       <Target className="w-3 h-3" /> Mục tiêu kỳ vọng:
                     </span>
-                    <strong className="text-emerald-400">{formatPrice(targetPrice)} đ</strong>
+                    <strong className="text-emerald-400">{formatVND(targetPrice)} <span className="text-[10px] text-emerald-500 font-normal">({formatPrice(targetPrice)})</span></strong>
                   </div>
                 </div>
 
@@ -251,13 +256,13 @@ export const StockRadar: React.FC<Props> = ({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    Giá: <strong className="text-slate-300 font-mono">{formatPrice(item.matchedPrice)}</strong>
+                    Giá: <strong className="text-slate-300 font-mono">{formatVND(item.matchedPrice)}</strong>
                   </div>
                 </div>
 
                 <div className="text-right">
                   <div className="font-bold text-indigo-400 font-mono">
-                    +{formatVND(item.netForeignVal)}
+                    +{formatBillion(item.netForeignVal)}
                   </div>
                   <div className="text-[10px] text-slate-400">
                     Gom ròng: +{item.netForeignQty.toLocaleString('vi-VN')} CP
@@ -293,7 +298,7 @@ export const StockRadar: React.FC<Props> = ({
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    Khớp: <strong className="text-slate-300 font-mono">{formatPrice(item.matchedPrice)}</strong>
+                    Khớp: <strong className="text-slate-300 font-mono">{formatVND(item.matchedPrice)}</strong>
                   </div>
                 </div>
 
@@ -302,7 +307,7 @@ export const StockRadar: React.FC<Props> = ({
                     +{item.priceChangePercent ? item.priceChangePercent.toFixed(2) : '0.0'}%
                   </div>
                   <div className="text-[10px] text-slate-400 font-mono">
-                    KL: {(item.totalVolume / 1000000).toFixed(2)}M CP
+                    KL: {(item.totalVolume / 1000000).toFixed(2)} triệu CP
                   </div>
                 </div>
               </div>

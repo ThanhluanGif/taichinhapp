@@ -120,9 +120,16 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
     return (val / 1000).toFixed(2);
   };
 
+  const formatVND = (val: number) => {
+    if (!val) return '-';
+    return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + ' đ';
+  };
+
   const formatVol = (val: number) => {
     if (!val) return '-';
-    return val.toLocaleString('vi-VN');
+    if (val >= 1000000) return (val / 1000000).toFixed(2) + ' triệu CP';
+    if (val >= 1000) return (val / 1000).toFixed(1) + ' nghìn CP';
+    return val.toLocaleString('vi-VN') + ' CP';
   };
 
   const formatBillion = (val: number) => {
@@ -177,7 +184,10 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                       : 'text-amber-400'
                   }`}
                 >
-                  {formatPrice(stock.matchedPrice)}
+                  {formatVND(stock.matchedPrice)}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  ({formatPrice(stock.matchedPrice)})
                 </span>
                 <span
                   className={`text-xs font-bold font-mono px-1.5 py-0.5 rounded flex items-center ${
@@ -191,15 +201,15 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                   {isGain && <TrendingUp className="w-3 h-3 mr-0.5" />}
                   {isLoss && <TrendingDown className="w-3 h-3 mr-0.5" />}
                   {isGain ? '+' : ''}
-                  {stock.priceChange ? (stock.priceChange / 1000).toFixed(2) : '0.00'} (
+                  {stock.priceChange ? formatVND(stock.priceChange) : '0 đ'} (
                   {isGain ? '+' : ''}
                   {stock.priceChangePercent ? stock.priceChangePercent.toFixed(2) : '0.0'}%)
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center justify-end gap-2">
-                <span>TC: <strong className="text-amber-400">{formatPrice(stock.refPrice)}</strong></span>
-                <span>Trần: <strong className="text-purple-400">{formatPrice(stock.ceiling)}</strong></span>
-                <span>Sàn: <strong className="text-cyan-400">{formatPrice(stock.floor)}</strong></span>
+                <span>TC: <strong className="text-amber-400">{formatVND(stock.refPrice)}</strong> ({formatPrice(stock.refPrice)})</span>
+                <span>Trần: <strong className="text-purple-400">{formatVND(stock.ceiling)}</strong> ({formatPrice(stock.ceiling)})</span>
+                <span>Sàn: <strong className="text-cyan-400">{formatVND(stock.floor)}</strong> ({formatPrice(stock.floor)})</span>
               </div>
             </div>
 
@@ -300,8 +310,9 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                     </span>
                     <span className="bg-rose-500/20 px-2 py-0.5 rounded text-[11px]">-7%</span>
                   </div>
-                  <div className="text-2xl font-black text-rose-400 font-mono">
-                    {formatPrice(stopLossPrice)} đ
+                  <div className="text-xl font-black text-rose-400 font-mono">
+                    {formatVND(stopLossPrice)}
+                    <span className="text-xs text-rose-500 font-normal ml-1">({formatPrice(stopLossPrice)})</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     <strong>Nguyên tắc:</strong> Nếu giá đóng cửa giảm thủng mức này (-7%), phải dứt khoát bán cắt lỗ để bảo vệ 93% vốn, không gồng lỗ.
@@ -316,8 +327,9 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                     </span>
                     <span className="bg-emerald-500/20 px-2 py-0.5 rounded text-[11px]">+15%</span>
                   </div>
-                  <div className="text-2xl font-black text-emerald-400 font-mono">
-                    {formatPrice(takeProfitPrice1)} đ
+                  <div className="text-xl font-black text-emerald-400 font-mono">
+                    {formatVND(takeProfitPrice1)}
+                    <span className="text-xs text-emerald-500 font-normal ml-1">({formatPrice(takeProfitPrice1)})</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     <strong>Hành động:</strong> Khi cổ phiếu chạm vùng này, chủ động chốt lời 50% khối lượng để bỏ túi lợi nhuận, 50% còn lại gồng tiếp.
@@ -332,8 +344,9 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                     </span>
                     <span className="bg-blue-500/20 px-2 py-0.5 rounded text-[11px]">+25%</span>
                   </div>
-                  <div className="text-2xl font-black text-blue-400 font-mono">
-                    {formatPrice(takeProfitPrice2)} đ
+                  <div className="text-xl font-black text-blue-400 font-mono">
+                    {formatVND(takeProfitPrice2)}
+                    <span className="text-xs text-blue-500 font-normal ml-1">({formatPrice(takeProfitPrice2)})</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     <strong>Kỳ vọng:</strong> Đỉnh cũ hoặc vùng kháng cự mạnh trung hạn. Chốt nốt phần còn lại khi xuất hiện tín hiệu phân phối.
@@ -641,17 +654,17 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                     <tbody className="divide-y divide-slate-800/60">
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 1</td>
-                        <td className="py-2 text-right text-emerald-400 font-bold">{formatPrice(stock.best1Bid)}</td>
+                        <td className="py-2 text-right text-emerald-400 font-bold">{formatVND(stock.best1Bid)}</td>
                         <td className="py-2 text-right text-white">{formatVol(stock.best1BidVol)}</td>
                       </tr>
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 2</td>
-                        <td className="py-2 text-right text-emerald-400 font-bold">{formatPrice(stock.best1Bid ? stock.best1Bid - 50 : 0)}</td>
+                        <td className="py-2 text-right text-emerald-400 font-bold">{formatVND(stock.best1Bid ? stock.best1Bid - 50 : 0)}</td>
                         <td className="py-2 text-right text-white">-</td>
                       </tr>
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 3</td>
-                        <td className="py-2 text-right text-emerald-400 font-bold">{formatPrice(stock.best1Bid ? stock.best1Bid - 100 : 0)}</td>
+                        <td className="py-2 text-right text-emerald-400 font-bold">{formatVND(stock.best1Bid ? stock.best1Bid - 100 : 0)}</td>
                         <td className="py-2 text-right text-white">-</td>
                       </tr>
                     </tbody>
@@ -675,17 +688,17 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                     <tbody className="divide-y divide-slate-800/60">
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 1</td>
-                        <td className="py-2 text-right text-rose-400 font-bold">{formatPrice(stock.best1Offer)}</td>
+                        <td className="py-2 text-right text-rose-400 font-bold">{formatVND(stock.best1Offer)}</td>
                         <td className="py-2 text-right text-white">{formatVol(stock.best1OfferVol)}</td>
                       </tr>
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 2</td>
-                        <td className="py-2 text-right text-rose-400 font-bold">{formatPrice(stock.best1Offer ? stock.best1Offer + 50 : 0)}</td>
+                        <td className="py-2 text-right text-rose-400 font-bold">{formatVND(stock.best1Offer ? stock.best1Offer + 50 : 0)}</td>
                         <td className="py-2 text-right text-white">-</td>
                       </tr>
                       <tr>
                         <td className="py-2 text-slate-400 font-sans">Giá 3</td>
-                        <td className="py-2 text-right text-rose-400 font-bold">{formatPrice(stock.best1Offer ? stock.best1Offer + 100 : 0)}</td>
+                        <td className="py-2 text-right text-rose-400 font-bold">{formatVND(stock.best1Offer ? stock.best1Offer + 100 : 0)}</td>
                         <td className="py-2 text-right text-white">-</td>
                       </tr>
                     </tbody>
@@ -701,11 +714,11 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
                 </div>
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
                   <span className="text-[11px] text-slate-400 block mb-1">Giá Cao Nhất</span>
-                  <span className="text-sm font-bold text-emerald-400 font-mono">{formatPrice(stock.highest)}</span>
+                  <span className="text-sm font-bold text-emerald-400 font-mono">{formatVND(stock.highest)} ({formatPrice(stock.highest)})</span>
                 </div>
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
                   <span className="text-[11px] text-slate-400 block mb-1">Giá Thấp Nhất</span>
-                  <span className="text-sm font-bold text-rose-400 font-mono">{formatPrice(stock.lowest)}</span>
+                  <span className="text-sm font-bold text-rose-400 font-mono">{formatVND(stock.lowest)} ({formatPrice(stock.lowest)})</span>
                 </div>
                 <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
                   <span className="text-[11px] text-slate-400 block mb-1">Khối Ngoại Mua / Bán</span>

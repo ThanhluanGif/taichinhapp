@@ -18,15 +18,16 @@ import {
   HelpCircle,
   X,
   Check,
+  Info,
 } from 'lucide-react';
 
 export interface CandleData {
   time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+  open: number;    // Giá mở cửa thực tế (VNĐ)
+  high: number;    // Giá cao nhất thực tế (VNĐ)
+  low: number;     // Giá thấp nhất thực tế (VNĐ)
+  close: number;   // Giá đóng cửa thực tế (VNĐ)
+  volume: number;  // Khối lượng giao dịch (Cổ phiếu)
   dateStr: string;
 }
 
@@ -61,7 +62,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // 1. Fetch historical OHLCV data from VNDirect
+  // 1. Fetch historical OHLCV data from VNDirect & Normalize to TRUE VNĐ VALUES
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -88,12 +89,21 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
             const list: CandleData[] = [];
             for (let i = 0; i < data.t.length; i++) {
               const d = new Date(data.t[i] * 1000);
+              // QUY ĐỔI CHUẨN THỊ TRƯỜNG CHỨNG KHOÁN VIỆT NAM:
+              // VNDirect API trả về dữ liệu ở đơn vị nghìn đồng (hệ số x 1.000).
+              // Ví dụ: 99.247 tương ứng với 99.250 VNĐ (chứ KHÔNG PHẢI 99.247 đồng hay 0.09 đồng).
+              // Ta nhân 1.000 để đưa về ĐÚNG GIÁ TRỊ THỰC TẾ TIỀN TỆ VIỆT NAM (VNĐ).
+              const openVND = Math.round(data.o[i] * 1000);
+              const highVND = Math.round(data.h[i] * 1000);
+              const lowVND = Math.round(data.l[i] * 1000);
+              const closeVND = Math.round(data.c[i] * 1000);
+
               list.push({
                 time: data.t[i],
-                open: data.o[i],
-                high: data.h[i],
-                low: data.l[i],
-                close: data.c[i],
+                open: openVND,
+                high: highVND,
+                low: lowVND,
+                close: closeVND,
                 volume: data.v[i],
                 dateStr: d.toLocaleDateString('vi-VN', {
                   day: '2-digit',
@@ -399,11 +409,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     const rawIdx = Math.round((svgX - 20) / step);
     const clamped = Math.max(0, Math.min(visibleCandles.length - 1, rawIdx));
     setHoveredIdx(clamped);
-
-    // If ruler is active and start is set, update end
-    if (isRulerActive && rulerStartIdx !== null && rulerEndIdx === null) {
-      // In dragging preview
-    }
   };
 
   const handleSvgClick = () => {
@@ -425,14 +430,19 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     hoveredIdx !== null ? visibleCandles[hoveredIdx] : visibleCandles[visibleCandles.length - 1];
   const globalHoveredIdx = hoveredIdx !== null ? offsetIdx + hoveredIdx : candles.length - 1;
 
-  // Formatters
-  const formatPrice = (p: number) => (p / 1000).toFixed(2);
+  // QUY CHUẨN ĐỊNH DẠNG SỐ VÀ TIỀN TỆ VIỆT NAM (CHUẨN 100%)
+  // 1. Giá trị thật theo đồng Việt Nam (VNĐ): 135.000 đ
   const formatVND = (p: number) =>
-    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(p);
-  const formatVol = (v: number) => {
-    if (v >= 1000000) return (v / 1000000).toFixed(2) + 'M';
-    if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
-    return v.toLocaleString('vi-VN');
+    new Intl.NumberFormat('vi-VN').format(Math.round(p)) + ' đ';
+
+  // 2. Điểm số niêm yết trên Bảng điện chứng khoán (Hệ số rút gọn x 1.000 VNĐ): 135.00
+  const formatBoardPrice = (p: number) => (p / 1000).toFixed(2);
+
+  // 3. Khối lượng cổ phiếu: Cổ phiếu (CP)
+  const formatVolVN = (v: number) => {
+    if (v >= 1000000) return (v / 1000000).toFixed(2) + ' triệu CP';
+    if (v >= 1000) return (v / 1000).toFixed(1) + ' nghìn CP';
+    return v.toLocaleString('vi-VN') + ' CP';
   };
 
   // Technical Assessment Summary
@@ -452,6 +462,19 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3 font-sans shadow-2xl">
       
+      {/* BANNER GIẢI THÍCH QUY ĐỔI GIÁ TRỊ CHUẨN VIỆT NAM */}
+      <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300">
+        <span className="flex items-center gap-1.5">
+          <Info className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+          <span>
+            <strong>Quy chuẩn Chứng khoán Việt Nam:</strong> 1 điểm bảng điện = <strong>1.000 VNĐ</strong> (Ví dụ: 135.00 = 135.000 đ/CP) | Khối lượng: <strong>Cổ phiếu (CP)</strong>
+          </span>
+        </span>
+        <span className="font-mono text-[10px] bg-blue-900/40 px-2 py-0.5 rounded text-blue-200">
+          HOSE / HNX Standard
+        </span>
+      </div>
+
       {/* 1. TOP TOOLBAR: CÔNG CỤ PHÂN TÍCH & ĐO ĐẠC SSI iBOARD */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
         
@@ -623,9 +646,9 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
         </div>
       </div>
 
-      {/* 2. HUD / ACTIVE CANDLE & INDICATOR VALUES */}
+      {/* 2. HUD / ACTIVE CANDLE & INDICATOR VALUES (HIỂN THỊ ĐÚNG TIỀN VNĐ & ĐIỂM BẢNG ĐIỆN) */}
       {currentHoveredCandle && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-mono bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-mono bg-slate-950/90 p-2.5 rounded-xl border border-slate-800/80">
           <div className="flex items-center gap-2">
             <span className="font-black text-sm text-white bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
               {symbol}
@@ -636,29 +659,30 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span>O: <strong className="text-slate-200">{formatPrice(currentHoveredCandle.open)}</strong></span>
-            <span>H: <strong className="text-emerald-400">{formatPrice(currentHoveredCandle.high)}</strong></span>
-            <span>L: <strong className="text-rose-400">{formatPrice(currentHoveredCandle.low)}</strong></span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span>Mở: <strong className="text-slate-200">{formatVND(currentHoveredCandle.open)}</strong></span>
+            <span>Cao: <strong className="text-emerald-400">{formatVND(currentHoveredCandle.high)}</strong></span>
+            <span>Thấp: <strong className="text-rose-400">{formatVND(currentHoveredCandle.low)}</strong></span>
             <span>
-              C:{' '}
+              Đóng:{' '}
               <strong className={currentHoveredCandle.close >= currentHoveredCandle.open ? 'text-emerald-400' : 'text-rose-400'}>
-                {formatPrice(currentHoveredCandle.close)}
+                {formatVND(currentHoveredCandle.close)}
               </strong>
+              <span className="text-[10px] text-slate-500 ml-1">({formatBoardPrice(currentHoveredCandle.close)})</span>
             </span>
-            <span>Vol: <strong className="text-slate-300">{formatVol(currentHoveredCandle.volume)}</strong></span>
+            <span>KL: <strong className="text-slate-300">{formatVolVN(currentHoveredCandle.volume)}</strong></span>
           </div>
 
           {/* Indicator live values */}
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             {showMA20 && indicatorData?.ma20[globalHoveredIdx] && (
               <span className="text-amber-300">
-                MA20: {formatPrice(indicatorData.ma20[globalHoveredIdx]!)}
+                MA20: {formatVND(indicatorData.ma20[globalHoveredIdx]!)}
               </span>
             )}
             {showMA50 && indicatorData?.ma50[globalHoveredIdx] && (
               <span className="text-blue-300">
-                MA50: {formatPrice(indicatorData.ma50[globalHoveredIdx]!)}
+                MA50: {formatVND(indicatorData.ma50[globalHoveredIdx]!)}
               </span>
             )}
             {showRSI && indicatorData?.rsi[globalHoveredIdx] && (
@@ -733,16 +757,16 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </linearGradient>
             </defs>
 
-            {/* Price Grid Lines */}
+            {/* Price Grid Lines with REAL VNĐ VALUES */}
             {[0.1, 0.3, 0.5, 0.7, 0.9].map((ratio, idx) => {
               const y = priceHeight * ratio;
               const priceVal =
                 chartMetrics.maxPrice - ratio * (chartMetrics.maxPrice - chartMetrics.minPrice);
               return (
                 <g key={idx}>
-                  <line x1="20" y1={y} x2={width - 65} y2={y} stroke="#1e293b" strokeDasharray="3 3" />
-                  <text x={width - 60} y={y + 3} fill="#64748b" fontSize="9" fontFamily="monospace">
-                    {formatPrice(priceVal)}
+                  <line x1="20" y1={y} x2={width - 75} y2={y} stroke="#1e293b" strokeDasharray="3 3" />
+                  <text x={width - 70} y={y + 3} fill="#64748b" fontSize="9" fontFamily="monospace">
+                    {formatVND(priceVal)}
                   </text>
                 </g>
               );
@@ -757,7 +781,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                     <line
                       x1="20"
                       y1={y}
-                      x2={width - 65}
+                      x2={width - 75}
                       y2={y}
                       stroke={fib.color}
                       strokeWidth="1"
@@ -772,7 +796,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                       fontFamily="monospace"
                       fontWeight="bold"
                     >
-                      Fibo {fib.ratio}: {formatPrice(fib.price)}
+                      Fibo {fib.ratio}: {formatVND(fib.price)}
                     </text>
                   </g>
                 );
@@ -785,42 +809,42 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 <line
                   x1="20"
                   y1={getY(chartMetrics.resistances[0])}
-                  x2={width - 65}
+                  x2={width - 75}
                   y2={getY(chartMetrics.resistances[0])}
                   stroke="#f43f5e"
                   strokeWidth="1.5"
                   strokeDasharray="5 3"
                 />
                 <text
-                  x={width - 60}
+                  x={width - 70}
                   y={getY(chartMetrics.resistances[0]) + 3}
                   fill="#f43f5e"
                   fontSize="9"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  R: {formatPrice(chartMetrics.resistances[0])}
+                  R: {formatVND(chartMetrics.resistances[0])}
                 </text>
 
                 {/* Support Line (Đáy) */}
                 <line
                   x1="20"
                   y1={getY(chartMetrics.supports[0])}
-                  x2={width - 65}
+                  x2={width - 75}
                   y2={getY(chartMetrics.supports[0])}
                   stroke="#10b981"
                   strokeWidth="1.5"
                   strokeDasharray="5 3"
                 />
                 <text
-                  x={width - 60}
+                  x={width - 70}
                   y={getY(chartMetrics.supports[0]) + 3}
                   fill="#10b981"
                   fontSize="9"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  S: {formatPrice(chartMetrics.supports[0])}
+                  S: {formatVND(chartMetrics.supports[0])}
                 </text>
               </g>
             )}
@@ -945,12 +969,12 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
             {/* VOLUME SUB-CHART */}
             <g>
-              <line x1="20" y1={volTop - 5} x2={width - 65} y2={volTop - 5} stroke="#334155" strokeDasharray="2 2" />
+              <line x1="20" y1={volTop - 5} x2={width - 75} y2={volTop - 5} stroke="#334155" strokeDasharray="2 2" />
               <text x="25" y={volTop + 10} fill="#64748b" fontSize="9" fontFamily="monospace" fontWeight="bold">
                 Khối Lượng (Volume)
               </text>
-              <text x={width - 60} y={volTop + 10} fill="#64748b" fontSize="9" fontFamily="monospace">
-                {formatVol(chartMetrics.maxVol)}
+              <text x={width - 70} y={volTop + 10} fill="#64748b" fontSize="9" fontFamily="monospace">
+                {formatVolVN(chartMetrics.maxVol)}
               </text>
 
               {/* Volume bars */}
@@ -999,7 +1023,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
             {/* RSI SUB-CHART */}
             {showRSI && indicatorData && (
               <g>
-                <line x1="20" y1={rsiTop - 5} x2={width - 65} y2={rsiTop - 5} stroke="#334155" strokeDasharray="2 2" />
+                <line x1="20" y1={rsiTop - 5} x2={width - 75} y2={rsiTop - 5} stroke="#334155" strokeDasharray="2 2" />
                 <text x="25" y={rsiTop + 10} fill="#06b6d4" fontSize="9" fontFamily="monospace" fontWeight="bold">
                   RSI (14)
                 </text>
@@ -1008,13 +1032,13 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 <line
                   x1="20"
                   y1={rsiTop + rsiHeight * 0.3}
-                  x2={width - 65}
+                  x2={width - 75}
                   y2={rsiTop + rsiHeight * 0.3}
                   stroke="#f43f5e"
                   strokeDasharray="2 2"
                   opacity="0.6"
                 />
-                <text x={width - 60} y={rsiTop + rsiHeight * 0.3 + 3} fill="#f43f5e" fontSize="8" fontFamily="monospace">
+                <text x={width - 70} y={rsiTop + rsiHeight * 0.3 + 3} fill="#f43f5e" fontSize="8" fontFamily="monospace">
                   70
                 </text>
 
@@ -1022,13 +1046,13 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 <line
                   x1="20"
                   y1={rsiTop + rsiHeight * 0.7}
-                  x2={width - 65}
+                  x2={width - 75}
                   y2={rsiTop + rsiHeight * 0.7}
                   stroke="#10b981"
                   strokeDasharray="2 2"
                   opacity="0.6"
                 />
-                <text x={width - 60} y={rsiTop + rsiHeight * 0.7 + 3} fill="#10b981" fontSize="8" fontFamily="monospace">
+                <text x={width - 70} y={rsiTop + rsiHeight * 0.7 + 3} fill="#10b981" fontSize="8" fontFamily="monospace">
                   30
                 </text>
 
@@ -1057,7 +1081,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
             {/* MACD SUB-CHART */}
             {showMACD && indicatorData && (
               <g>
-                <line x1="20" y1={macdTop - 5} x2={width - 65} y2={macdTop - 5} stroke="#334155" strokeDasharray="2 2" />
+                <line x1="20" y1={macdTop - 5} x2={width - 75} y2={macdTop - 5} stroke="#334155" strokeDasharray="2 2" />
                 <text x="25" y={macdTop + 10} fill="#f43f5e" fontSize="9" fontFamily="monospace" fontWeight="bold">
                   MACD (12, 26, 9)
                 </text>
@@ -1068,7 +1092,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                   const hist = indicatorData.macdHist[gIdx] || 0;
                   const x = getX(vIdx) - candleW / 2;
                   const midY = macdTop + macdHeight / 2;
-                  const barH = Math.min(25, Math.abs(hist) * 3);
+                  const barH = Math.min(25, Math.abs(hist) * 0.05);
                   const y = hist >= 0 ? midY - barH : midY;
                   return (
                     <rect
@@ -1085,7 +1109,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </g>
             )}
 
-            {/* RULER / MEASUREMENT OVERLAY */}
+            {/* RULER / MEASUREMENT OVERLAY (ĐO % VÀ VNĐ CHÍNH XÁC) */}
             {isRulerActive && rulerStartIdx !== null && (
               <g>
                 {(() => {
@@ -1135,38 +1159,38 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                       />
 
                       {/* Tooltip badge in center of box */}
-                      <g transform={`translate(${(minX + maxX) / 2}, ${Math.max(20, minY - 10)})`}>
+                      <g transform={`translate(${(minX + maxX) / 2}, ${Math.max(25, minY - 12)})`}>
                         <rect
-                          x="-65"
-                          y="-24"
-                          width="130"
-                          height="28"
+                          x="-80"
+                          y="-28"
+                          width="160"
+                          height="32"
                           rx="6"
                           fill="#0f172a"
                           stroke={isGain ? '#10b981' : '#f43f5e'}
-                          strokeWidth="1"
+                          strokeWidth="1.5"
                         />
                         <text
                           x="0"
-                          y="-10"
+                          y="-14"
                           textAnchor="middle"
                           fill={isGain ? '#34d399' : '#f87171'}
-                          fontSize="10"
+                          fontSize="11"
                           fontFamily="monospace"
                           fontWeight="bold"
                         >
                           {isGain ? '+' : ''}
-                          {percentDiff.toFixed(2)}% ({formatPrice(priceDiff)} đ)
+                          {percentDiff.toFixed(2)}% ({isGain ? '+' : ''}{formatVND(priceDiff)})
                         </text>
                         <text
                           x="0"
-                          y="0"
+                          y="-1"
                           textAnchor="middle"
                           fill="#94a3b8"
-                          fontSize="8"
+                          fontSize="8.5"
                           fontFamily="monospace"
                         >
-                          {barsCount} phiên nến
+                          {barsCount} phiên ({formatVND(startCandle.close)} ➔ {formatVND(endCandle.close)})
                         </text>
                       </g>
                     </g>
@@ -1176,7 +1200,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
             )}
 
             {/* INTERACTIVE CROSSHAIR */}
-            {mousePos && mousePos.x >= 20 && mousePos.x <= width - 65 && (
+            {mousePos && mousePos.x >= 20 && mousePos.x <= width - 75 && (
               <g pointerEvents="none">
                 {/* Vertical Crosshair Line */}
                 <line
@@ -1194,7 +1218,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                   <line
                     x1="20"
                     y1={mousePos.y}
-                    x2={width - 65}
+                    x2={width - 75}
                     y2={mousePos.y}
                     stroke="#64748b"
                     strokeWidth="1"
@@ -1204,10 +1228,10 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
                 {/* Y-Axis Price Tag */}
                 {mousePos.y <= priceHeight && (
-                  <g transform={`translate(${width - 65}, ${mousePos.y})`}>
-                    <rect x="0" y="-9" width="60" height="18" fill="#3b82f6" rx="3" />
-                    <text x="30" y="3" textAnchor="middle" fill="#ffffff" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                      {formatPrice(getPriceFromY(mousePos.y))}
+                  <g transform={`translate(${width - 75}, ${mousePos.y})`}>
+                    <rect x="0" y="-10" width="75" height="20" fill="#3b82f6" rx="3" />
+                    <text x="37" y="4" textAnchor="middle" fill="#ffffff" fontSize="9" fontFamily="monospace" fontWeight="bold">
+                      {formatVND(getPriceFromY(mousePos.y))}
                     </text>
                   </g>
                 )}
@@ -1215,8 +1239,8 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 {/* X-Axis Date Tag */}
                 {currentHoveredCandle && (
                   <g transform={`translate(${mousePos.x}, ${priceHeight + 5})`}>
-                    <rect x="-35" y="0" width="70" height="16" fill="#1e293b" stroke="#475569" strokeWidth="1" rx="3" />
-                    <text x="0" y="11" textAnchor="middle" fill="#cbd5e1" fontSize="8" fontFamily="monospace">
+                    <rect x="-40" y="0" width="80" height="18" fill="#1e293b" stroke="#475569" strokeWidth="1" rx="3" />
+                    <text x="0" y="12" textAnchor="middle" fill="#cbd5e1" fontSize="9" fontFamily="monospace">
                       {currentHoveredCandle.dateStr}
                     </text>
                   </g>
@@ -1231,7 +1255,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 text-xs">
         
         {/* Box 1: Xu Hướng & MA */}
-        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
           <span className="text-[10px] text-slate-400 block mb-1 font-medium">Xu Hướng Kỹ Thuật (MA):</span>
           <div className="flex items-center gap-1.5 font-bold">
             {isStrongTrend ? (
@@ -1248,13 +1272,13 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-slate-500 mt-1 block">
-            MA20: {lastMA20 ? formatPrice(lastMA20) : '-'} | MA50: {lastMA50 ? formatPrice(lastMA50) : '-'}
+          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
+            MA20: {lastMA20 ? formatVND(lastMA20) : '-'} | MA50: {lastMA50 ? formatVND(lastMA50) : '-'}
           </span>
         </div>
 
         {/* Box 2: Chỉ Báo RSI (14) */}
-        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
           <span className="text-[10px] text-slate-400 block mb-1 font-medium">Sức Mạnh RSI (14):</span>
           <div className="flex items-center gap-1.5 font-bold">
             {isOverbought ? (
@@ -1267,7 +1291,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </span>
             ) : (
               <span className="text-cyan-300 flex items-center gap-1">
-                ✓ Trung Tính Tích Lũy (RSI {lastRSI ? lastRSI.toFixed(1) : '-'})
+                ✓ Tích Lũy Bình Thường (RSI {lastRSI ? lastRSI.toFixed(1) : '-'})
               </span>
             )}
           </div>
@@ -1277,7 +1301,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
         </div>
 
         {/* Box 3: Thanh Khoản So Với MA20 */}
-        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
           <span className="text-[10px] text-slate-400 block mb-1 font-medium">Thanh Khoản Phiên Gần Nhất:</span>
           <div className="flex items-center gap-1.5 font-bold">
             {isVolBreakout ? (
@@ -1290,8 +1314,8 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-slate-500 mt-1 block">
-            Vol phiên: {formatVol(lastVol)} | Vol TB 20: {formatVol(lastVolMA20)}
+          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
+            Phiên: {formatVolVN(lastVol)} | TB 20: {formatVolVN(lastVolMA20)}
           </span>
         </div>
       </div>
