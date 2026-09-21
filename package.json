@@ -1,0 +1,10 @@
+{
+  "name": "taichinhapp-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd web-app && npm install --ignore-scripts && npm run build",
+    "start": "cd web-app && npm run start",
+    "dev": "cd web-app && npm run dev"
+  }
+}
