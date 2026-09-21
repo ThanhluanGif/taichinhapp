@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { StockQuote, CompanyProfile } from '@/types/stock';
+import { NewsArticle } from '@/types';
 import {
   X,
   TrendingUp,
@@ -10,26 +11,27 @@ import {
   PieChart,
   BookOpen,
   ExternalLink,
-  ShieldAlert,
   Award,
-  DollarSign,
   Activity,
+  Zap,
+  Globe2,
+  Newspaper,
+  Calendar,
 } from 'lucide-react';
 
 interface Props {
   stock: StockQuote | null;
   onClose: () => void;
+  articles?: NewsArticle[];
 }
 
-export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'CHART' | 'FINANCE' | 'ORDERBOOK'>('CHART');
+export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [] }) => {
+  const [activeTab, setActiveTab] = useState<'CHART' | 'FINANCE' | 'NEWS' | 'ORDERBOOK'>('CHART');
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(false);
 
   useEffect(() => {
     if (!stock) return;
     setActiveTab('CHART');
-    setLoadingProfile(true);
 
     const fetchProfile = async () => {
       try {
@@ -40,7 +42,7 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
           if (profiles[stock.symbol]) {
             setProfile(profiles[stock.symbol]);
           } else {
-            // Try fetching live from Simplize API as fallback
+            // Live fallback
             try {
               const liveRes = await fetch(`https://api.simplize.vn/api/company/summary/${stock.symbol}`);
               if (liveRes.ok) {
@@ -68,14 +70,12 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
                 });
               }
             } catch {
-              // fallback
+              // ignore
             }
           }
         }
       } catch (err) {
         console.error('Error fetching profile:', err);
-      } finally {
-        setLoadingProfile(false);
       }
     };
 
@@ -88,6 +88,19 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
   const isLoss = stock.priceChange < 0;
   const isCeiling = stock.matchedPrice >= stock.ceiling && stock.ceiling > 0;
   const isFloor = stock.matchedPrice <= stock.floor && stock.floor > 0;
+
+  // Lọc các bài báo liên quan trực tiếp đến mã cổ phiếu
+  const relatedArticles = articles.filter(
+    (a) =>
+      a.title.toUpperCase().includes(stock.symbol) ||
+      a.summary.toUpperCase().includes(stock.symbol) ||
+      (stock.name && a.title.toLowerCase().includes(stock.name.toLowerCase().slice(0, 10)))
+  );
+
+  // Tính toán đột biến khối ngoại & thanh khoản
+  const netForeign = (stock.foreignBuy || 0) - (stock.foreignSell || 0);
+  const isForeignNetBuy = netForeign > 0;
+  const isVolumeBreakout = stock.totalVolume > 1000000;
 
   const formatPrice = (val: number) => {
     if (!val) return '-';
@@ -104,17 +117,16 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
     return (val / 1000000000).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + ' Tỷ VNĐ';
   };
 
-  // TradingView symbol format: HOSE:FPT or HNX:SHS
   const tradingViewSymbol = `${stock.exchange || 'HOSE'}:${stock.symbol}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
         
         {/* Header Bar */}
-        <div className="px-5 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-4">
+        <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-md shadow-blue-500/20">
               {stock.symbol}
             </div>
             <div>
@@ -138,7 +150,7 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
           </div>
 
           {/* Current Price & Quick Stats */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-5">
             <div className="text-right">
               <div className="flex items-center justify-end gap-1.5">
                 <span
@@ -183,7 +195,7 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Đóng cửa sổ"
+              title="Đóng"
             >
               <X className="w-5 h-5" />
             </button>
@@ -191,54 +203,67 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-5 bg-slate-900/60 border-b border-slate-800 flex items-center gap-2 text-xs">
+        <div className="px-5 bg-slate-900/60 border-b border-slate-800 flex items-center gap-2 text-xs overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('CHART')}
-            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors whitespace-nowrap ${
               activeTab === 'CHART'
                 ? 'border-blue-500 text-blue-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <BarChart2 className="w-4 h-4" />
-            Biểu Đồ Nến Kỹ Thuật (TradingView)
+            Biểu Đồ Nến Kỹ Thuật
           </button>
 
           <button
             onClick={() => setActiveTab('FINANCE')}
-            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors whitespace-nowrap ${
               activeTab === 'FINANCE'
                 ? 'border-blue-500 text-blue-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <PieChart className="w-4 h-4" />
-            Sơ Đồ Đánh Giá & Chỉ Số Doanh Nghiệp
+            Sơ Đồ Đánh Giá & Định Giá
+          </button>
+
+          <button
+            onClick={() => setActiveTab('NEWS')}
+            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors whitespace-nowrap ${
+              activeTab === 'NEWS'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Newspaper className="w-4 h-4" />
+            Tin Tức Doanh Nghiệp ({relatedArticles.length})
           </button>
 
           <button
             onClick={() => setActiveTab('ORDERBOOK')}
-            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 py-2.5 px-3 border-b-2 font-semibold transition-colors whitespace-nowrap ${
               activeTab === 'ORDERBOOK'
                 ? 'border-blue-500 text-blue-400'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <BookOpen className="w-4 h-4" />
-            Sổ Lệnh & Chi Tiết Bước Giá
+            Sổ Lệnh Bước Giá
           </button>
         </div>
 
         {/* Modal Body Content */}
         <div className="flex-1 overflow-y-auto p-5 bg-slate-950">
           
-          {/* TAB 1: TRADINGVIEW CANDLESTICK CHART */}
+          {/* TAB 1: TRADINGVIEW CANDLESTICK CHART (Direct load with 0 notices) */}
           {activeTab === 'CHART' && (
             <div className="w-full h-[540px] rounded-xl overflow-hidden border border-slate-800 bg-slate-900 relative">
               <iframe
                 title={`Biểu đồ nến kỹ thuật ${stock.symbol}`}
-                src={`https://s.tradingview.com/widgetembed/?symbol=${tradingViewSymbol}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=vi_VN&utm_source=localhost`}
+                src={`https://s.tradingview.com/widgetembed/?symbol=${tradingViewSymbol}&interval=D&hidesidetoolbar=1&symboledit=1&saveimage=0&toolbarbg=1e293b&studies=%5B%5D&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&locale=vi_VN`}
                 className="w-full h-full border-0"
+                allowFullScreen
               />
             </div>
           )}
@@ -246,10 +271,48 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
           {/* TAB 2: FINANCIAL METRICS & VALUATION */}
           {activeTab === 'FINANCE' && (
             <div className="space-y-6">
+              
+              {/* Đột biến Dòng tiền Khối ngoại & Nội địa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isForeignNetBuy ? 'bg-indigo-500/10 text-indigo-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                      <Globe2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">Dòng Tiền Khối Ngoại</span>
+                      <strong className={`text-xs ${isForeignNetBuy ? 'text-indigo-400' : 'text-rose-400'}`}>
+                        {isForeignNetBuy ? `Gom ròng +${netForeign.toLocaleString()} CP` : `Bán ròng ${netForeign.toLocaleString()} CP`}
+                      </strong>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold border ${isForeignNetBuy ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                    {isForeignNetBuy ? 'Tín Hiệu Mua' : 'Thận Trọng'}
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isVolumeBreakout ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-slate-400 block">Thanh Khoản Nội Địa</span>
+                      <strong className="text-xs text-slate-200">
+                        Tổng {(stock.totalVolume / 1000000).toFixed(2)}M Cổ phiếu
+                      </strong>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold border ${isVolumeBreakout ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                    {isVolumeBreakout ? 'Đột Biến Vol' : 'Bình Thường'}
+                  </span>
+                </div>
+              </div>
+
               {/* Financial Ratio Grid */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-blue-400" /> Các Chỉ Số Định Giá & Tài Chính Trọng Yếu
+                  <Activity className="w-4 h-4 text-blue-400" /> Các Chỉ Số Định Giá & Tài Chính
                 </h4>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -384,7 +447,59 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose }) => {
             </div>
           )}
 
-          {/* TAB 3: ORDER BOOK & PRICE STEPS */}
+          {/* TAB 3: RELATED NEWS ARTICLES */}
+          {activeTab === 'NEWS' && (
+            <div className="space-y-3">
+              {relatedArticles.length === 0 ? (
+                <div className="text-center py-12 bg-slate-900 rounded-xl border border-slate-800 p-6">
+                  <Newspaper className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">
+                    Chưa có tin tức báo chí mới nhất nhắc trực tiếp đến mã {stock.symbol}.
+                  </p>
+                </div>
+              ) : (
+                relatedArticles.map((art) => (
+                  <article
+                    key={art.id}
+                    className="p-4 bg-slate-900 rounded-xl border border-slate-800 hover:border-blue-500/50 transition-colors space-y-2"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-semibold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                        {art.source}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {art.published_at}
+                      </span>
+                    </div>
+
+                    <h5 className="font-bold text-sm text-white hover:text-blue-400 transition-colors">
+                      <a href={art.link} target="_blank" rel="noopener noreferrer">
+                        {art.title}
+                      </a>
+                    </h5>
+
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                      {art.summary}
+                    </p>
+
+                    <div className="pt-1">
+                      <a
+                        href={art.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline"
+                      >
+                        Đọc toàn văn bài báo <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: ORDER BOOK & PRICE STEPS */}
           {activeTab === 'ORDERBOOK' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

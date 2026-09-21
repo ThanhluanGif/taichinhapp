@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StockQuote, SectorKey, StocksDataPayload, MarketIndex } from '@/types/stock';
+import { NewsArticle } from '@/types';
 import { StockDetailModal } from './StockDetailModal';
 import { MarketIndicesBar } from './MarketIndicesBar';
 import {
@@ -13,6 +14,7 @@ import {
 
 interface Props {
   initialData?: StocksDataPayload;
+  articles?: NewsArticle[];
 }
 
 const SECTOR_TABS: { key: SectorKey; label: string; icon: string }[] = [
@@ -27,7 +29,7 @@ const SECTOR_TABS: { key: SectorKey; label: string; icon: string }[] = [
   { key: 'HOSE', label: 'Tất Cả VN-Index', icon: '🇻🇳' },
 ];
 
-export const SSIBoard: React.FC<Props> = ({ initialData }) => {
+export const SSIBoard: React.FC<Props> = ({ initialData, articles = [] }) => {
   const [data, setData] = useState<StocksDataPayload | null>(initialData || null);
   const [activeSector, setActiveSector] = useState<SectorKey>('VN30');
   const [searchQuery, setSearchQuery] = useState('');
@@ -424,6 +426,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
       <StockDetailModal
         stock={selectedStock}
         onClose={() => setSelectedStock(null)}
+        articles={articles}
       />
     </div>
   );
