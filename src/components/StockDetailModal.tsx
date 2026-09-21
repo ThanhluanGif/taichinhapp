@@ -289,10 +289,10 @@ export const StockDetailModal: React.FC<Props> = ({ stock, onClose, articles = [
         {/* Modal Body Content */}
         <div className="flex-1 overflow-y-auto p-5 bg-slate-950">
           
-          {/* TAB 1: 100% VIETNAMESE CANDLESTICK CHART (ZERO APPLE, DIRECT LOAD) */}
+          {/* TAB 1: 100% VIETNAMESE CANDLESTICK CHART (SYNCED WITH SSI BOARD) */}
           {activeTab === 'CHART' && (
             <div className="space-y-3">
-              <CandlestickChart symbol={stock.symbol} />
+              <CandlestickChart symbol={stock.symbol} liveStock={stock} />
             </div>
           )}
 

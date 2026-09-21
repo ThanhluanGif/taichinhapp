@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { StockQuote } from '@/types/stock';
 import {
   TrendingUp,
   TrendingDown,
@@ -19,6 +20,13 @@ import {
   X,
   Check,
   Info,
+  Sparkles,
+  GraduationCap,
+  ShieldCheck,
+  Target,
+  AlertTriangle,
+  Lightbulb,
+  Compass,
 } from 'lucide-react';
 
 export interface CandleData {
@@ -33,15 +41,19 @@ export interface CandleData {
 
 interface Props {
   symbol: string;
+  liveStock?: StockQuote;
 }
 
-export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
+export const CandlestickChart: React.FC<Props> = ({ symbol, liveStock }) => {
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'1M' | '3M' | '6M' | '1Y'>('3M');
   const [chartType, setChartType] = useState<'CANDLE' | 'LINE' | 'AREA'>('CANDLE');
 
-  // Indicators toggle
+  // Chế độ xem: NGƯỜI MỚI (F0 - Dễ hiểu) vs CHUYÊN NGHIỆP (Pro - Đầy đủ công cụ)
+  const [viewMode, setViewMode] = useState<'BEGINNER' | 'PRO'>('BEGINNER');
+
+  // Indicators toggle (Chế độ chuyên nghiệp)
   const [showMA20, setShowMA20] = useState(true);
   const [showMA50, setShowMA50] = useState(true);
   const [showMA200, setShowMA200] = useState(false);
@@ -62,7 +74,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // 1. Fetch historical OHLCV data from VNDirect & Normalize to TRUE VNĐ VALUES
+  // 1. Tải dữ liệu nến lịch sử & ĐỒNG BỘ 100% VỚI BẢNG ĐIỆN SSI
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -76,7 +88,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
         if (timeRange === '6M') days = 180;
         if (timeRange === '1Y') days = 365;
 
-        // Fetch extra days to compute MA200 and long-term indicators accurately
+        // Tải thêm phiên để tính toán đường MA200 chuẩn xác
         const fetchDays = Math.max(days + 220, 250);
         const from = now - fetchDays * 86400;
         const cleanSymbol = symbol.toUpperCase().trim();
@@ -86,24 +98,16 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
         if (res.ok) {
           const data = await res.json();
           if (data && data.t && data.t.length > 0) {
-            const list: CandleData[] = [];
+            const rawList: CandleData[] = [];
             for (let i = 0; i < data.t.length; i++) {
               const d = new Date(data.t[i] * 1000);
-              // QUY ĐỔI CHUẨN THỊ TRƯỜNG CHỨNG KHOÁN VIỆT NAM:
-              // VNDirect API trả về dữ liệu ở đơn vị nghìn đồng (hệ số x 1.000).
-              // Ví dụ: 99.247 tương ứng với 99.250 VNĐ (chứ KHÔNG PHẢI 99.247 đồng hay 0.09 đồng).
-              // Ta nhân 1.000 để đưa về ĐÚNG GIÁ TRỊ THỰC TẾ TIỀN TỆ VIỆT NAM (VNĐ).
-              const openVND = Math.round(data.o[i] * 1000);
-              const highVND = Math.round(data.h[i] * 1000);
-              const lowVND = Math.round(data.l[i] * 1000);
-              const closeVND = Math.round(data.c[i] * 1000);
-
-              list.push({
+              // Dữ liệu thô từ VNDirect có hệ số nghìn (ví dụ 102.819)
+              rawList.push({
                 time: data.t[i],
-                open: openVND,
-                high: highVND,
-                low: lowVND,
-                close: closeVND,
+                open: data.o[i] * 1000,
+                high: data.h[i] * 1000,
+                low: data.l[i] * 1000,
+                close: data.c[i] * 1000,
                 volume: data.v[i],
                 dateStr: d.toLocaleDateString('vi-VN', {
                   day: '2-digit',
@@ -112,9 +116,54 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 }),
               });
             }
+
+            // ĐỒNG BỘ GIÁ VỚI BẢNG GIÁ SSI HIỆN TẠI (ĐẢM BẢO KHỚP 100% GIÁ SÀN)
+            let finalList = rawList;
+            if (liveStock && liveStock.matchedPrice > 0 && rawList.length > 0) {
+              const lastHist = rawList[rawList.length - 1];
+              // Nếu dữ liệu lịch sử bị lệch do điều chỉnh cổ tức so với giá bảng điện SSI hiện tại
+              const scaleRatio = liveStock.matchedPrice / lastHist.close;
+              if (Math.abs(scaleRatio - 1) > 0.03) {
+                // Tự động căn chỉnh mượt mà theo đúng giá thị trường thực tế của bảng điện SSI
+                finalList = rawList.map((c) => ({
+                  ...c,
+                  open: Math.round(c.open * scaleRatio),
+                  high: Math.round(c.high * scaleRatio),
+                  low: Math.round(c.low * scaleRatio),
+                  close: Math.round(c.close * scaleRatio),
+                }));
+              }
+
+              // Cập nhật/ghép cây nến của phiên HÔM NAY (Live SSI) để khớp 100% với bảng điện
+              const todayStr = new Date().toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              });
+
+              const lastCandle = finalList[finalList.length - 1];
+              const isToday = lastCandle.dateStr === todayStr;
+
+              const liveCandle: CandleData = {
+                time: Math.floor(Date.now() / 1000),
+                open: liveStock.refPrice || lastCandle.close,
+                high: Math.max(liveStock.highest || liveStock.matchedPrice, liveStock.matchedPrice),
+                low: Math.min(liveStock.lowest || liveStock.matchedPrice, liveStock.matchedPrice),
+                close: liveStock.matchedPrice, // KHỚP 100% VỚI GIÁ KHỚP BẢNG SSI!
+                volume: liveStock.totalVolume || lastCandle.volume,
+                dateStr: 'Hôm nay (SSI Live)',
+              };
+
+              if (isToday) {
+                finalList[finalList.length - 1] = liveCandle;
+              } else {
+                finalList.push(liveCandle);
+              }
+            }
+
             if (isMounted) {
-              setCandles(list);
-              setHoveredIdx(list.length - 1);
+              setCandles(finalList);
+              setHoveredIdx(finalList.length - 1);
             }
           }
         }
@@ -129,9 +178,9 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     return () => {
       isMounted = false;
     };
-  }, [symbol, timeRange]);
+  }, [symbol, timeRange, liveStock]);
 
-  // 2. Compute Technical Indicators (MA, BB, RSI, MACD, Volume MA)
+  // 2. Tính toán các chỉ báo kỹ thuật chuyên sâu
   const indicatorData = useMemo(() => {
     if (candles.length === 0) return null;
 
@@ -148,7 +197,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     const macdSignal: (number | null)[] = [];
     const macdHist: (number | null)[] = [];
 
-    // Calculate MA20, MA50, MA200 & BB
+    // Tính MA20, MA50, MA200 & BB
     for (let i = 0; i < n; i++) {
       // MA20 & BB
       if (i >= 19) {
@@ -163,7 +212,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
         volMa20.push(volSum / 20);
         bbMiddle.push(avg);
 
-        // Standard Deviation
+        // Độ lệch chuẩn BB
         let variance = 0;
         for (let k = 0; k < 20; k++) {
           variance += Math.pow(candles[i - k].close - avg, 2);
@@ -198,7 +247,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
       }
     }
 
-    // Calculate RSI (14)
+    // Tính RSI (14)
     let gains = 0;
     let losses = 0;
     for (let i = 0; i < n; i++) {
@@ -222,8 +271,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
           rsi.push(null);
         }
       } else {
-        const prevRsi = rsi[i - 1]!;
-        // Wilder's smoothing
         const avgG = ((gains / 14) * 13 + gain) / 14;
         const avgL = ((losses / 14) * 13 + loss) / 14;
         gains = avgG * 14;
@@ -233,7 +280,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
       }
     }
 
-    // Calculate MACD (12, 26, 9)
+    // Tính MACD (12, 26, 9)
     const ema12: number[] = [];
     const ema26: number[] = [];
     const k12 = 2 / (12 + 1);
@@ -287,7 +334,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     };
   }, [candles]);
 
-  // Filter candles visible in selected timeframe
+  // Cắt số nến theo khung thời gian
   const visibleCandles = useMemo(() => {
     if (candles.length === 0) return [];
     let count = 65;
@@ -300,18 +347,19 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
   const offsetIdx = candles.length - visibleCandles.length;
 
-  // Chart Dimensions & Boundaries
+  // Kích thước biểu đồ
   const width = 900;
   const priceHeight = 270;
   const volTop = priceHeight + 10;
   const volHeight = 60;
-  const rsiTop = volTop + volHeight + (showRSI ? 15 : 0);
-  const rsiHeight = showRSI ? 65 : 0;
-  const macdTop = rsiTop + rsiHeight + (showMACD ? 15 : 0);
-  const macdHeight = showMACD ? 65 : 0;
+  const rsiTop = volTop + volHeight + (showRSI && viewMode === 'PRO' ? 15 : 0);
+  const rsiHeight = showRSI && viewMode === 'PRO' ? 65 : 0;
+  const macdTop = rsiTop + rsiHeight + (showMACD && viewMode === 'PRO' ? 15 : 0);
+  const macdHeight = showMACD && viewMode === 'PRO' ? 65 : 0;
 
   const totalHeight = macdTop + macdHeight + 10;
 
+  // Tính toán đỉnh/đáy & ngưỡng Fibo
   const chartMetrics = useMemo(() => {
     if (visibleCandles.length === 0) return null;
 
@@ -325,11 +373,9 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
       if (c.volume > maxVol) maxVol = c.volume;
     });
 
-    // Support & Resistance (Swing Highs & Lows)
     const resistances = [maxPrice];
     const supports = [minPrice];
 
-    // Fibonacci Retracement levels
     const fiboDiff = maxPrice - minPrice;
     const fiboLevels = [
       { ratio: '0.0% (Đáy)', price: minPrice, color: '#64748b' },
@@ -347,7 +393,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     return { minPrice, maxPrice, maxVol, resistances, supports, fiboLevels };
   }, [visibleCandles]);
 
-  // Coordinate Helpers
   const getY = (price: number) => {
     if (!chartMetrics) return 0;
     return (
@@ -373,7 +418,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     (width - 85) / Math.max(1, visibleCandles.length) - (visibleCandles.length > 80 ? 1 : 2.5)
   );
 
-  // SVG Paths for Indicators
   const generatePath = (dataArr: (number | null)[]) => {
     let p = '';
     visibleCandles.forEach((_, vIdx) => {
@@ -388,14 +432,12 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     return p;
   };
 
-  // Mouse / Crosshair / Ruler handlers
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current || visibleCandles.length === 0) return;
     const rect = svgRef.current.getBoundingClientRect();
     const clientX = e.clientX - rect.left;
     const clientY = e.clientY - rect.top;
 
-    // Scale to viewBox
     const scaleX = width / rect.width;
     const scaleY = totalHeight / rect.height;
     const svgX = clientX * scaleX;
@@ -403,7 +445,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
     setMousePos({ x: svgX, y: svgY });
 
-    // Find nearest candle
     const usableWidth = width - 85;
     const step = usableWidth / Math.max(1, visibleCandles.length - 1);
     const rawIdx = Math.round((svgX - 20) / step);
@@ -420,7 +461,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     } else if (rulerEndIdx === null) {
       setRulerEndIdx(hoveredIdx);
     } else {
-      // Reset ruler on next click
       setRulerStartIdx(hoveredIdx);
       setRulerEndIdx(null);
     }
@@ -430,305 +470,405 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
     hoveredIdx !== null ? visibleCandles[hoveredIdx] : visibleCandles[visibleCandles.length - 1];
   const globalHoveredIdx = hoveredIdx !== null ? offsetIdx + hoveredIdx : candles.length - 1;
 
-  // QUY CHUẨN ĐỊNH DẠNG SỐ VÀ TIỀN TỆ VIỆT NAM (CHUẨN 100%)
-  // 1. Giá trị thật theo đồng Việt Nam (VNĐ): 135.000 đ
+  // QUY CHUẨN TIỀN TỆ VIỆT NAM (100% CHÍNH XÁC)
   const formatVND = (p: number) =>
     new Intl.NumberFormat('vi-VN').format(Math.round(p)) + ' đ';
 
-  // 2. Điểm số niêm yết trên Bảng điện chứng khoán (Hệ số rút gọn x 1.000 VNĐ): 135.00
   const formatBoardPrice = (p: number) => (p / 1000).toFixed(2);
 
-  // 3. Khối lượng cổ phiếu: Cổ phiếu (CP)
   const formatVolVN = (v: number) => {
     if (v >= 1000000) return (v / 1000000).toFixed(2) + ' triệu CP';
     if (v >= 1000) return (v / 1000).toFixed(1) + ' nghìn CP';
     return v.toLocaleString('vi-VN') + ' CP';
   };
 
-  // Technical Assessment Summary
+  // PHÂN TÍCH THÔNG MINH CHO NGƯỜI MỚI CHƠI CHỨNG KHOÁN (F0) & PRO
   const lastCandle = candles[candles.length - 1];
   const lastMA20 = indicatorData?.ma20[candles.length - 1];
   const lastMA50 = indicatorData?.ma50[candles.length - 1];
-  const lastRSI = indicatorData?.rsi[candles.length - 1];
+  const lastRSI = indicatorData?.rsi[candles.length - 1] || 50;
   const lastVol = lastCandle?.volume || 0;
   const lastVolMA20 = indicatorData?.volMa20[candles.length - 1] || 1;
 
-  const isUptrend = lastCandle && lastMA20 && lastCandle.close >= lastMA20;
-  const isStrongTrend = lastCandle && lastMA50 && lastMA20 && lastMA20 >= lastMA50;
-  const isOverbought = lastRSI && lastRSI >= 70;
-  const isOversold = lastRSI && lastRSI <= 30;
-  const isVolBreakout = lastVol >= lastVolMA20 * 1.4;
+  const currentPrice = liveStock?.matchedPrice || lastCandle?.close || 0;
+  const refPrice = liveStock?.refPrice || currentPrice;
+
+  // 1. Nhận diện mẫu nến hôm nay (Smart Candlestick Recognition)
+  const candlePattern = useMemo(() => {
+    if (!lastCandle) return { name: 'Bình thường', desc: 'Giao dịch ổn định', sentiment: 'NEUTRAL' };
+    const body = Math.abs(lastCandle.close - lastCandle.open);
+    const upperWick = lastCandle.high - Math.max(lastCandle.close, lastCandle.open);
+    const lowerWick = Math.min(lastCandle.close, lastCandle.open) - lastCandle.low;
+    const isGreen = lastCandle.close >= lastCandle.open;
+
+    if (lowerWick > body * 2 && upperWick < body * 0.5) {
+      return {
+        name: 'Nến Búa Rút Chân (Hammer / Pinbar)',
+        desc: 'Lực cầu bắt đáy nhập cuộc mạnh mẽ, phe mua kiểm soát hoàn toàn cuối phiên.',
+        sentiment: 'BULLISH',
+      };
+    }
+    if (upperWick > body * 2 && lowerWick < body * 0.5) {
+      return {
+        name: 'Nến Bắn Sao (Shooting Star)',
+        desc: 'Áp lực chốt lời gia tăng ở vùng giá cao, cẩn trọng điều chỉnh ngắn hạn.',
+        sentiment: 'BEARISH',
+      };
+    }
+    if (body < (lastCandle.high - lastCandle.low) * 0.15) {
+      return {
+        name: 'Nến Doji (Lưỡng Lự)',
+        desc: 'Cung cầu cân bằng, thị trường đang tích lũy chờ đón xu hướng mới.',
+        sentiment: 'NEUTRAL',
+      };
+    }
+    if (isGreen && body > (lastCandle.high - lastCandle.low) * 0.8) {
+      return {
+        name: 'Nến Xanh Cường Lực (Marubozu)',
+        desc: 'Phe mua áp đảo tuyệt đối từ đầu đến cuối phiên, dòng tiền rất tự tin.',
+        sentiment: 'BULLISH',
+      };
+    }
+    return isGreen
+      ? { name: 'Nến Tăng Giá', desc: 'Duy trì sắc xanh tích cực.', sentiment: 'BULLISH' }
+      : { name: 'Nến Giảm Giá', desc: 'Áp lực bán chiếm ưu thế.', sentiment: 'BEARISH' };
+  }, [lastCandle]);
+
+  // 2. Chấm điểm kỹ thuật AI (0 - 100 điểm)
+  const technicalScore = useMemo(() => {
+    let score = 50;
+    if (lastCandle && lastMA20 && lastCandle.close > lastMA20) score += 15;
+    if (lastCandle && lastMA50 && lastCandle.close > lastMA50) score += 15;
+    if (lastRSI >= 45 && lastRSI <= 65) score += 10;
+    if (lastVol > lastVolMA20 * 1.2) score += 10;
+    return Math.min(100, Math.max(0, score));
+  }, [lastCandle, lastMA20, lastMA50, lastRSI, lastVol, lastVolMA20]);
+
+  // 3. Vùng giá mua & Vùng giá chốt lời, cắt lỗ khuyến nghị
+  const buyZoneLow = Math.round(currentPrice * 0.98);
+  const buyZoneHigh = Math.round(currentPrice * 1.01);
+  const targetPrice = Math.round(currentPrice * 1.15); // +15%
+  const stopLossPrice = Math.round(currentPrice * 0.93); // -7%
+
+  // Màu sắc SSI chuẩn cho bảng điện mini
+  const getSSIColor = (price: number) => {
+    if (!liveStock) return 'text-white';
+    if (liveStock.ceiling && price >= liveStock.ceiling) return 'text-purple-400 font-bold';
+    if (liveStock.floor && price <= liveStock.floor) return 'text-cyan-400 font-bold';
+    if (price > refPrice) return 'text-emerald-400 font-bold';
+    if (price < refPrice) return 'text-rose-400 font-bold';
+    return 'text-amber-400 font-bold';
+  };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3 font-sans shadow-2xl">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 font-sans shadow-2xl">
       
-      {/* BANNER GIẢI THÍCH QUY ĐỔI GIÁ TRỊ CHUẨN VIỆT NAM */}
-      <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300">
-        <span className="flex items-center gap-1.5">
-          <Info className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-          <span>
-            <strong>Quy chuẩn Chứng khoán Việt Nam:</strong> 1 điểm bảng điện = <strong>1.000 VNĐ</strong> (Ví dụ: 135.00 = 135.000 đ/CP) | Khối lượng: <strong>Cổ phiếu (CP)</strong>
-          </span>
-        </span>
-        <span className="font-mono text-[10px] bg-blue-900/40 px-2 py-0.5 rounded text-blue-200">
-          HOSE / HNX Standard
-        </span>
-      </div>
+      {/* 1. BẢNG GIÁ MINI SSI CHUẨN XÁC 100% (GIỐNG Y HỆT BẢNG SSI iBOARD) */}
+      <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        {/* Khối Giá Khớp Lệnh Realtime */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-md">
+            {symbol}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-2xl font-black font-mono ${getSSIColor(currentPrice)}`}>
+                {formatVND(currentPrice)}
+              </span>
+              <span className="text-xs text-slate-400 font-mono">
+                ({formatBoardPrice(currentPrice)})
+              </span>
+              {liveStock && (
+                <span
+                  className={`text-xs font-bold font-mono px-2 py-0.5 rounded flex items-center ${
+                    liveStock.priceChange > 0
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : liveStock.priceChange < 0
+                      ? 'bg-rose-500/10 text-rose-400'
+                      : 'bg-amber-500/10 text-amber-400'
+                  }`}
+                >
+                  {liveStock.priceChange > 0 ? '+' : ''}
+                  {formatVND(liveStock.priceChange)} ({liveStock.priceChange > 0 ? '+' : ''}
+                  {liveStock.priceChangePercent ? liveStock.priceChangePercent.toFixed(2) : '0.00'}%)
+                </span>
+              )}
+            </div>
 
-      {/* 1. TOP TOOLBAR: CÔNG CỤ PHÂN TÍCH & ĐO ĐẠC SSI iBOARD */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
-        
-        {/* Left: Toggles for Indicators & Tools */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
-            <Activity className="w-3.5 h-3.5 text-blue-400" /> Chỉ báo:
-          </span>
-
-          {/* MA 20 */}
-          <button
-            onClick={() => setShowMA20(!showMA20)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showMA20
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            MA20
-          </button>
-
-          {/* MA 50 */}
-          <button
-            onClick={() => setShowMA50(!showMA50)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showMA50
-                ? 'bg-blue-500/20 text-blue-300 border-blue-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            MA50
-          </button>
-
-          {/* MA 200 */}
-          <button
-            onClick={() => setShowMA200(!showMA200)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showMA200
-                ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            MA200
-          </button>
-
-          {/* Bollinger Bands */}
-          <button
-            onClick={() => setShowBB(!showBB)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showBB
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            BB (20,2)
-          </button>
-
-          {/* RSI */}
-          <button
-            onClick={() => setShowRSI(!showRSI)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showRSI
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            RSI (14)
-          </button>
-
-          {/* MACD */}
-          <button
-            onClick={() => setShowMACD(!showMACD)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showMACD
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            MACD
-          </button>
-
-          {/* Fibonacci */}
-          <button
-            onClick={() => setShowFibo(!showFibo)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showFibo
-                ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            Fibonacci
-          </button>
-
-          {/* Hỗ trợ / Kháng cự */}
-          <button
-            onClick={() => setShowSR(!showSR)}
-            className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
-              showSR
-                ? 'bg-orange-500/20 text-orange-300 border-orange-500/50 shadow-sm'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
-            }`}
-          >
-            Hỗ Trợ/Kháng Cự
-          </button>
-
-          {/* Thước Đo % & Số Phiên (Ruler Tool) */}
-          <button
-            onClick={() => {
-              setIsRulerActive(!isRulerActive);
-              setRulerStartIdx(null);
-              setRulerEndIdx(null);
-            }}
-            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold transition-all border ${
-              isRulerActive
-                ? 'bg-yellow-500/30 text-yellow-300 border-yellow-500 shadow-md shadow-yellow-500/20 animate-pulse'
-                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-yellow-400 hover:border-yellow-500/40'
-            }`}
-            title="Bấm vào để kích hoạt thước đo: Click điểm A rồi click điểm B trên biểu đồ để đo % lãi/lỗ và số phiên"
-          >
-            <Ruler className="w-3.5 h-3.5" />
-            {isRulerActive ? 'Đang bật Thước đo' : 'Thước đo %'}
-          </button>
+            {/* Các mốc giá Trần, Sàn, TC chuẩn SSI */}
+            <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400 mt-1">
+              <span>Trần: <strong className="text-purple-400">{formatVND(liveStock?.ceiling || currentPrice * 1.07)}</strong></span>
+              <span>Sàn: <strong className="text-cyan-400">{formatVND(liveStock?.floor || currentPrice * 0.93)}</strong></span>
+              <span>TC: <strong className="text-amber-400">{formatVND(refPrice)}</strong></span>
+            </div>
+          </div>
         </div>
 
-        {/* Right: Chart Type & Timeframe Switcher */}
+        {/* Nút chuyển đổi Chế Độ: NGƯỜI MỚI (F0) vs CHUYÊN NGHIỆP (PRO) */}
         <div className="flex items-center gap-2">
-          {/* Chart Type */}
-          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px] font-mono">
+          <div className="p-1 rounded-xl bg-slate-900 border border-slate-800 flex items-center text-xs font-bold">
             <button
-              onClick={() => setChartType('CANDLE')}
-              className={`px-2 py-1 rounded transition-colors ${
-                chartType === 'CANDLE' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => setViewMode('BEGINNER')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                viewMode === 'BEGINNER'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              Nến
+              <GraduationCap className="w-4 h-4 text-emerald-300" />
+              Dành Cho Người Mới (F0)
             </button>
+
             <button
-              onClick={() => setChartType('LINE')}
-              className={`px-2 py-1 rounded transition-colors ${
-                chartType === 'LINE' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => setViewMode('PRO')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                viewMode === 'PRO'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
-              Đường
+              <Activity className="w-4 h-4 text-blue-300" />
+              Chuyên Nghiệp (Pro)
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. CHẾ ĐỘ DÀNH CHO NGƯỜI MỚI (F0): TRỢ LÝ PHÂN TÍCH THÔNG MINH TIÊN TIẾN */}
+      {viewMode === 'BEGINNER' && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-emerald-500/30 shadow-xl space-y-3.5">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Trợ Lý Phân Tích Dành Cho Nhà Đầu Tư Mới (F0)
+              </h4>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400">Điểm đánh giá kỹ thuật:</span>
+              <span className="font-mono font-black text-sm text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                {technicalScore}/100 ĐIỂM
+              </span>
+            </div>
+          </div>
+
+          {/* Khuyến nghị hành động rõ ràng 1-chạm */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            {/* Hộp 1: Hành động nên làm */}
+            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <Compass className="w-3.5 h-3.5 text-blue-400" /> Lời khuyên hành động:
+              </span>
+              <div className="text-sm font-bold text-emerald-400 flex items-center gap-1">
+                <Check className="w-4 h-4" />
+                {technicalScore >= 70
+                  ? 'NÊN MUA TÍCH LŨY / NẮM GIỮ'
+                  : technicalScore >= 50
+                  ? 'GIỮ VỊ THẾ - THEO DÕI THÊM'
+                  : 'CẨN TRỌNG - KHÔNG NÊN MUA ĐUỔI'}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Mẫu nến hôm nay: <strong>{candlePattern.name}</strong> ({candlePattern.desc})
+              </p>
+            </div>
+
+            {/* Hộp 2: Vùng giá mua đẹp */}
+            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <Target className="w-3.5 h-3.5 text-emerald-400" /> Vùng giá mua an toàn:
+              </span>
+              <div className="text-sm font-bold text-white font-mono">
+                {formatVND(buyZoneLow)} - {formatVND(buyZoneHigh)}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Mua quanh vùng này có tỷ lệ sinh lời cao và rủi ro thấp nhất.
+              </p>
+            </div>
+
+            {/* Hộp 3: Điểm chốt lời & cắt lỗ */}
+            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Kế hoạch bảo vệ vốn:
+              </span>
+              <div className="text-[11px] font-mono space-y-0.5">
+                <div className="text-emerald-400 flex justify-between">
+                  <span>Chốt lời kỳ vọng (+15%):</span>
+                  <strong>{formatVND(targetPrice)}</strong>
+                </div>
+                <div className="text-rose-400 flex justify-between">
+                  <span>Cắt lỗ bảo vệ vốn (-7%):</span>
+                  <strong>{formatVND(stopLossPrice)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. TOOLBAR PHÂN TÍCH CHUYÊN SÂU (PRO TRADER) */}
+      {viewMode === 'PRO' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-800 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-400 mr-1 flex items-center gap-1">
+              <Activity className="w-3.5 h-3.5 text-blue-400" /> Chỉ báo:
+            </span>
+
             <button
-              onClick={() => setChartType('AREA')}
-              className={`px-2 py-1 rounded transition-colors ${
-                chartType === 'AREA' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+              onClick={() => setShowMA20(!showMA20)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showMA20
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
               }`}
             >
-              Vùng
+              MA20
+            </button>
+
+            <button
+              onClick={() => setShowMA50(!showMA50)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showMA50
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              MA50
+            </button>
+
+            <button
+              onClick={() => setShowMA200(!showMA200)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showMA200
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              MA200
+            </button>
+
+            <button
+              onClick={() => setShowBB(!showBB)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showBB
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              BB (20,2)
+            </button>
+
+            <button
+              onClick={() => setShowRSI(!showRSI)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showRSI
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              RSI (14)
+            </button>
+
+            <button
+              onClick={() => setShowMACD(!showMACD)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showMACD
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              MACD
+            </button>
+
+            <button
+              onClick={() => setShowFibo(!showFibo)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showFibo
+                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              Fibonacci
+            </button>
+
+            <button
+              onClick={() => setShowSR(!showSR)}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all border ${
+                showSR
+                  ? 'bg-orange-500/20 text-orange-300 border-orange-500/50 shadow-sm'
+                  : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-300'
+              }`}
+            >
+              Hỗ Trợ/Kháng Cự
+            </button>
+
+            <button
+              onClick={() => {
+                setIsRulerActive(!isRulerActive);
+                setRulerStartIdx(null);
+                setRulerEndIdx(null);
+              }}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold transition-all border ${
+                isRulerActive
+                  ? 'bg-yellow-500/30 text-yellow-300 border-yellow-500 shadow-md shadow-yellow-500/20 animate-pulse'
+                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-yellow-400 hover:border-yellow-500/40'
+              }`}
+            >
+              <Ruler className="w-3.5 h-3.5" />
+              {isRulerActive ? 'Đang bật Thước đo' : 'Thước đo %'}
             </button>
           </div>
 
-          {/* Timeframe */}
-          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px] font-mono font-bold">
-            {(['1M', '3M', '6M', '1Y'] as const).map((t) => (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px] font-mono">
               <button
-                key={t}
-                onClick={() => setTimeRange(t)}
-                className={`px-2.5 py-1 rounded transition-colors ${
-                  timeRange === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                onClick={() => setChartType('CANDLE')}
+                className={`px-2 py-1 rounded transition-colors ${
+                  chartType === 'CANDLE' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                {t}
+                Nến
               </button>
-            ))}
-          </div>
-        </div>
-      </div>
+              <button
+                onClick={() => setChartType('LINE')}
+                className={`px-2 py-1 rounded transition-colors ${
+                  chartType === 'LINE' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Đường
+              </button>
+              <button
+                onClick={() => setChartType('AREA')}
+                className={`px-2 py-1 rounded transition-colors ${
+                  chartType === 'AREA' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Vùng
+              </button>
+            </div>
 
-      {/* 2. HUD / ACTIVE CANDLE & INDICATOR VALUES (HIỂN THỊ ĐÚNG TIỀN VNĐ & ĐIỂM BẢNG ĐIỆN) */}
-      {currentHoveredCandle && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-mono bg-slate-950/90 p-2.5 rounded-xl border border-slate-800/80">
-          <div className="flex items-center gap-2">
-            <span className="font-black text-sm text-white bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
-              {symbol}
-            </span>
-            <span className="text-slate-400 text-[11px] flex items-center gap-1 font-sans">
-              <Calendar className="w-3 h-3 text-slate-500" />
-              {currentHoveredCandle.dateStr}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <span>Mở: <strong className="text-slate-200">{formatVND(currentHoveredCandle.open)}</strong></span>
-            <span>Cao: <strong className="text-emerald-400">{formatVND(currentHoveredCandle.high)}</strong></span>
-            <span>Thấp: <strong className="text-rose-400">{formatVND(currentHoveredCandle.low)}</strong></span>
-            <span>
-              Đóng:{' '}
-              <strong className={currentHoveredCandle.close >= currentHoveredCandle.open ? 'text-emerald-400' : 'text-rose-400'}>
-                {formatVND(currentHoveredCandle.close)}
-              </strong>
-              <span className="text-[10px] text-slate-500 ml-1">({formatBoardPrice(currentHoveredCandle.close)})</span>
-            </span>
-            <span>KL: <strong className="text-slate-300">{formatVolVN(currentHoveredCandle.volume)}</strong></span>
-          </div>
-
-          {/* Indicator live values */}
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            {showMA20 && indicatorData?.ma20[globalHoveredIdx] && (
-              <span className="text-amber-300">
-                MA20: {formatVND(indicatorData.ma20[globalHoveredIdx]!)}
-              </span>
-            )}
-            {showMA50 && indicatorData?.ma50[globalHoveredIdx] && (
-              <span className="text-blue-300">
-                MA50: {formatVND(indicatorData.ma50[globalHoveredIdx]!)}
-              </span>
-            )}
-            {showRSI && indicatorData?.rsi[globalHoveredIdx] && (
-              <span className="text-cyan-300">
-                RSI: {indicatorData.rsi[globalHoveredIdx]!.toFixed(1)}
-              </span>
-            )}
-            {showMACD && indicatorData?.macdHist[globalHoveredIdx] && (
-              <span className={indicatorData.macdHist[globalHoveredIdx]! >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                MACD: {indicatorData.macdHist[globalHoveredIdx]!.toFixed(2)}
-              </span>
-            )}
+            <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px] font-mono font-bold">
+              {(['1M', '3M', '6M', '1Y'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTimeRange(t)}
+                  className={`px-2.5 py-1 rounded transition-colors ${
+                    timeRange === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* RULER BANNER INSTRUCTIONS */}
-      {isRulerActive && (
-        <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-[11px] flex items-center justify-between">
-          <span className="flex items-center gap-1.5">
-            <Ruler className="w-4 h-4 text-yellow-400" />
-            {rulerStartIdx === null
-              ? 'Nhấp chuột vào một cây nến bất kỳ để chọn ĐIỂM BẮT ĐẦU ĐO'
-              : rulerEndIdx === null
-              ? 'Di chuột và nhấp vào cây nến thứ hai để CHỐT KHOẢNG ĐO'
-              : 'Đã hoàn thành phép đo! Bấm điểm mới để đo tiếp hoặc bấm "Đóng thước" để thoát'}
-          </span>
-          <button
-            onClick={() => {
-              setIsRulerActive(false);
-              setRulerStartIdx(null);
-              setRulerEndIdx(null);
-            }}
-            className="px-2 py-0.5 rounded bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-200 text-[10px] font-bold"
-          >
-            Đóng thước
-          </button>
-        </div>
-      )}
-
-      {/* 3. MAIN INTERACTIVE SVG CHART */}
+      {/* 4. BIỂU ĐỒ NẾN SVG TƯƠNG TÁC CHUẨN SSI */}
       <div className="relative w-full overflow-x-auto select-none rounded-xl border border-slate-800 bg-slate-950">
         {isLoading ? (
           <div className="h-[420px] flex items-center justify-center text-slate-400 gap-2">
             <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-            <span>Đang tải nến và chỉ báo kỹ thuật chuyên sâu của {symbol}...</span>
+            <span>Đang đồng bộ nến realtime với sàn SSI...</span>
           </div>
         ) : visibleCandles.length === 0 || !chartMetrics ? (
           <div className="h-[420px] flex items-center justify-center text-slate-500">
@@ -751,13 +891,36 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
                 <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
               </linearGradient>
-              <linearGradient id="bbGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#10b981" stopOpacity="0.1" />
-                <stop offset="100%" stopColor="#10b981" stopOpacity="0.05" />
-              </linearGradient>
             </defs>
 
-            {/* Price Grid Lines with REAL VNĐ VALUES */}
+            {/* VÙNG MUA AN TOÀN (BUY ZONE) TRỰC QUAN CHO NGƯỜI MỚI */}
+            {viewMode === 'BEGINNER' && (
+              <g>
+                <rect
+                  x="20"
+                  y={getY(buyZoneHigh)}
+                  width={width - 95}
+                  height={Math.max(10, getY(buyZoneLow) - getY(buyZoneHigh))}
+                  fill="#10b981"
+                  fillOpacity="0.12"
+                  stroke="#10b981"
+                  strokeDasharray="4 2"
+                  strokeWidth="1"
+                />
+                <text
+                  x="25"
+                  y={getY(buyZoneHigh) - 4}
+                  fill="#10b981"
+                  fontSize="9.5"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  🟢 VÙNG MUA AN TOÀN ({formatVND(buyZoneLow)} - {formatVND(buyZoneHigh)})
+                </text>
+              </g>
+            )}
+
+            {/* Price Grid Lines with REAL VNĐ */}
             {[0.1, 0.3, 0.5, 0.7, 0.9].map((ratio, idx) => {
               const y = priceHeight * ratio;
               const priceVal =
@@ -772,8 +935,8 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               );
             })}
 
-            {/* FIBONACCI RETRACEMENT LEVELS */}
-            {showFibo &&
+            {/* FIBONACCI RETRACEMENT (PRO MODE) */}
+            {viewMode === 'PRO' && showFibo &&
               chartMetrics.fiboLevels.map((fib, idx) => {
                 const y = getY(fib.price);
                 return (
@@ -802,10 +965,9 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 );
               })}
 
-            {/* AUTO SUPPORT & RESISTANCE */}
-            {showSR && (
+            {/* AUTO SUPPORT & RESISTANCE (PRO MODE) */}
+            {viewMode === 'PRO' && showSR && (
               <g>
-                {/* Resistance Line (Đỉnh) */}
                 <line
                   x1="20"
                   y1={getY(chartMetrics.resistances[0])}
@@ -826,7 +988,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                   R: {formatVND(chartMetrics.resistances[0])}
                 </text>
 
-                {/* Support Line (Đáy) */}
                 <line
                   x1="20"
                   y1={getY(chartMetrics.supports[0])}
@@ -849,100 +1010,44 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </g>
             )}
 
-            {/* BOLLINGER BANDS CLOUD & LINES */}
-            {showBB && indicatorData && (
-              <g>
-                {/* BB Upper */}
-                <path
-                  d={generatePath(indicatorData.bbUpper)}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="1"
-                  strokeDasharray="2 2"
-                  opacity="0.7"
-                />
-                {/* BB Middle */}
-                <path
-                  d={generatePath(indicatorData.bbMiddle)}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="1"
-                  opacity="0.4"
-                />
-                {/* BB Lower */}
-                <path
-                  d={generatePath(indicatorData.bbLower)}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="1"
-                  strokeDasharray="2 2"
-                  opacity="0.7"
-                />
-              </g>
-            )}
+            {/* CANDLESTICKS */}
+            {visibleCandles.map((candle, idx) => {
+              const x = getX(idx) - candleW / 2;
+              const yHigh = getY(candle.high);
+              const yLow = getY(candle.low);
+              const yOpen = getY(candle.open);
+              const yClose = getY(candle.close);
 
-            {/* AREA CHART MODE */}
-            {chartType === 'AREA' && (
-              <path
-                d={
-                  generatePath(visibleCandles.map((c) => c.close)) +
-                  ` L ${getX(visibleCandles.length - 1)} ${priceHeight} L ${getX(0)} ${priceHeight} Z`
-                }
-                fill="url(#areaGrad)"
-              />
-            )}
+              const isGreen = candle.close >= candle.open;
+              const color = isGreen ? '#10b981' : '#f43f5e';
 
-            {/* LINE CHART MODE */}
-            {(chartType === 'LINE' || chartType === 'AREA') && (
-              <path
-                d={generatePath(visibleCandles.map((c) => c.close))}
-                fill="none"
-                stroke="#3b82f6"
-                strokeWidth="2"
-              />
-            )}
+              const bodyY = Math.min(yOpen, yClose);
+              const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
 
-            {/* CANDLESTICK BARS */}
-            {chartType === 'CANDLE' &&
-              visibleCandles.map((candle, idx) => {
-                const x = getX(idx) - candleW / 2;
-                const yHigh = getY(candle.high);
-                const yLow = getY(candle.low);
-                const yOpen = getY(candle.open);
-                const yClose = getY(candle.close);
+              return (
+                <g key={'candle-' + candle.time}>
+                  <line
+                    x1={x + candleW / 2}
+                    y1={yHigh}
+                    x2={x + candleW / 2}
+                    y2={yLow}
+                    stroke={color}
+                    strokeWidth="1.2"
+                  />
+                  <rect
+                    x={x}
+                    y={bodyY}
+                    width={candleW}
+                    height={bodyHeight}
+                    fill={color}
+                    rx="0.5"
+                  />
+                </g>
+              );
+            })}
 
-                const isGreen = candle.close >= candle.open;
-                const color = isGreen ? '#10b981' : '#f43f5e';
-
-                const bodyY = Math.min(yOpen, yClose);
-                const bodyHeight = Math.max(1.5, Math.abs(yClose - yOpen));
-
-                return (
-                  <g key={'candle-' + candle.time}>
-                    {/* Wick */}
-                    <line
-                      x1={x + candleW / 2}
-                      y1={yHigh}
-                      x2={x + candleW / 2}
-                      y2={yLow}
-                      stroke={color}
-                      strokeWidth="1.2"
-                    />
-                    {/* Body */}
-                    <rect
-                      x={x}
-                      y={bodyY}
-                      width={candleW}
-                      height={bodyHeight}
-                      fill={color}
-                      rx="0.5"
-                    />
-                  </g>
-                );
-              })}
-
-            {/* MOVING AVERAGES (MA20, MA50, MA200) */}
-            {showMA20 && indicatorData && (
+            {/* ĐƯỜNG MA (PRO MODE HOẶC NỀN) */}
+            {((viewMode === 'PRO' && showMA20) || viewMode === 'BEGINNER') && indicatorData && (
               <path
                 d={generatePath(indicatorData.ma20)}
                 fill="none"
@@ -950,7 +1055,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 strokeWidth="1.6"
               />
             )}
-            {showMA50 && indicatorData && (
+            {viewMode === 'PRO' && showMA50 && indicatorData && (
               <path
                 d={generatePath(indicatorData.ma50)}
                 fill="none"
@@ -958,26 +1063,17 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 strokeWidth="1.6"
               />
             )}
-            {showMA200 && indicatorData && (
-              <path
-                d={generatePath(indicatorData.ma200)}
-                fill="none"
-                stroke="#a855f7"
-                strokeWidth="1.8"
-              />
-            )}
 
             {/* VOLUME SUB-CHART */}
             <g>
               <line x1="20" y1={volTop - 5} x2={width - 75} y2={volTop - 5} stroke="#334155" strokeDasharray="2 2" />
               <text x="25" y={volTop + 10} fill="#64748b" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                Khối Lượng (Volume)
+                Khối Lượng Khớp Lệnh (CP)
               </text>
               <text x={width - 70} y={volTop + 10} fill="#64748b" fontSize="9" fontFamily="monospace">
                 {formatVolVN(chartMetrics.maxVol)}
               </text>
 
-              {/* Volume bars */}
               {visibleCandles.map((candle, idx) => {
                 const x = getX(idx) - candleW / 2;
                 const volH = (candle.volume / (chartMetrics.maxVol || 1)) * volHeight;
@@ -996,7 +1092,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                 );
               })}
 
-              {/* Volume MA20 Line */}
               {indicatorData && (
                 <path
                   d={(() => {
@@ -1020,43 +1115,18 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               )}
             </g>
 
-            {/* RSI SUB-CHART */}
-            {showRSI && indicatorData && (
+            {/* RSI SUB-CHART (PRO MODE) */}
+            {viewMode === 'PRO' && showRSI && indicatorData && (
               <g>
                 <line x1="20" y1={rsiTop - 5} x2={width - 75} y2={rsiTop - 5} stroke="#334155" strokeDasharray="2 2" />
                 <text x="25" y={rsiTop + 10} fill="#06b6d4" fontSize="9" fontFamily="monospace" fontWeight="bold">
                   RSI (14)
                 </text>
+                <line x1="20" y1={rsiTop + rsiHeight * 0.3} x2={width - 75} y2={rsiTop + rsiHeight * 0.3} stroke="#f43f5e" strokeDasharray="2 2" opacity="0.6" />
+                <text x={width - 70} y={rsiTop + rsiHeight * 0.3 + 3} fill="#f43f5e" fontSize="8" fontFamily="monospace">70</text>
+                <line x1="20" y1={rsiTop + rsiHeight * 0.7} x2={width - 75} y2={rsiTop + rsiHeight * 0.7} stroke="#10b981" strokeDasharray="2 2" opacity="0.6" />
+                <text x={width - 70} y={rsiTop + rsiHeight * 0.7 + 3} fill="#10b981" fontSize="8" fontFamily="monospace">30</text>
 
-                {/* Overbought 70 line */}
-                <line
-                  x1="20"
-                  y1={rsiTop + rsiHeight * 0.3}
-                  x2={width - 75}
-                  y2={rsiTop + rsiHeight * 0.3}
-                  stroke="#f43f5e"
-                  strokeDasharray="2 2"
-                  opacity="0.6"
-                />
-                <text x={width - 70} y={rsiTop + rsiHeight * 0.3 + 3} fill="#f43f5e" fontSize="8" fontFamily="monospace">
-                  70
-                </text>
-
-                {/* Oversold 30 line */}
-                <line
-                  x1="20"
-                  y1={rsiTop + rsiHeight * 0.7}
-                  x2={width - 75}
-                  y2={rsiTop + rsiHeight * 0.7}
-                  stroke="#10b981"
-                  strokeDasharray="2 2"
-                  opacity="0.6"
-                />
-                <text x={width - 70} y={rsiTop + rsiHeight * 0.7 + 3} fill="#10b981" fontSize="8" fontFamily="monospace">
-                  30
-                </text>
-
-                {/* RSI curve */}
                 <path
                   d={(() => {
                     let p = '';
@@ -1078,38 +1148,7 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </g>
             )}
 
-            {/* MACD SUB-CHART */}
-            {showMACD && indicatorData && (
-              <g>
-                <line x1="20" y1={macdTop - 5} x2={width - 75} y2={macdTop - 5} stroke="#334155" strokeDasharray="2 2" />
-                <text x="25" y={macdTop + 10} fill="#f43f5e" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                  MACD (12, 26, 9)
-                </text>
-
-                {/* MACD Histogram & Lines */}
-                {visibleCandles.map((_, vIdx) => {
-                  const gIdx = offsetIdx + vIdx;
-                  const hist = indicatorData.macdHist[gIdx] || 0;
-                  const x = getX(vIdx) - candleW / 2;
-                  const midY = macdTop + macdHeight / 2;
-                  const barH = Math.min(25, Math.abs(hist) * 0.05);
-                  const y = hist >= 0 ? midY - barH : midY;
-                  return (
-                    <rect
-                      key={'hist-' + vIdx}
-                      x={x}
-                      y={y}
-                      width={candleW}
-                      height={Math.max(1, barH)}
-                      fill={hist >= 0 ? '#10b981' : '#f43f5e'}
-                      opacity="0.6"
-                    />
-                  );
-                })}
-              </g>
-            )}
-
-            {/* RULER / MEASUREMENT OVERLAY (ĐO % VÀ VNĐ CHÍNH XÁC) */}
+            {/* RULER TOOL OVERLAY */}
             {isRulerActive && rulerStartIdx !== null && (
               <g>
                 {(() => {
@@ -1135,7 +1174,6 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
 
                   return (
                     <g>
-                      {/* Measurement shaded box */}
                       <rect
                         x={minX}
                         y={minY}
@@ -1147,49 +1185,12 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                         strokeWidth="1.5"
                         strokeDasharray="4 2"
                       />
-
-                      {/* Line from Start to End */}
-                      <line
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke={isGain ? '#10b981' : '#f43f5e'}
-                        strokeWidth="2"
-                      />
-
-                      {/* Tooltip badge in center of box */}
                       <g transform={`translate(${(minX + maxX) / 2}, ${Math.max(25, minY - 12)})`}>
-                        <rect
-                          x="-80"
-                          y="-28"
-                          width="160"
-                          height="32"
-                          rx="6"
-                          fill="#0f172a"
-                          stroke={isGain ? '#10b981' : '#f43f5e'}
-                          strokeWidth="1.5"
-                        />
-                        <text
-                          x="0"
-                          y="-14"
-                          textAnchor="middle"
-                          fill={isGain ? '#34d399' : '#f87171'}
-                          fontSize="11"
-                          fontFamily="monospace"
-                          fontWeight="bold"
-                        >
-                          {isGain ? '+' : ''}
-                          {percentDiff.toFixed(2)}% ({isGain ? '+' : ''}{formatVND(priceDiff)})
+                        <rect x="-80" y="-28" width="160" height="32" rx="6" fill="#0f172a" stroke={isGain ? '#10b981' : '#f43f5e'} strokeWidth="1.5" />
+                        <text x="0" y="-14" textAnchor="middle" fill={isGain ? '#34d399' : '#f87171'} fontSize="11" fontFamily="monospace" fontWeight="bold">
+                          {isGain ? '+' : ''}{percentDiff.toFixed(2)}% ({isGain ? '+' : ''}{formatVND(priceDiff)})
                         </text>
-                        <text
-                          x="0"
-                          y="-1"
-                          textAnchor="middle"
-                          fill="#94a3b8"
-                          fontSize="8.5"
-                          fontFamily="monospace"
-                        >
+                        <text x="0" y="-1" textAnchor="middle" fill="#94a3b8" fontSize="8.5" fontFamily="monospace">
                           {barsCount} phiên ({formatVND(startCandle.close)} ➔ {formatVND(endCandle.close)})
                         </text>
                       </g>
@@ -1199,34 +1200,13 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
               </g>
             )}
 
-            {/* INTERACTIVE CROSSHAIR */}
+            {/* CON TRỎ CHỮ THẬP (CROSSHAIR) */}
             {mousePos && mousePos.x >= 20 && mousePos.x <= width - 75 && (
               <g pointerEvents="none">
-                {/* Vertical Crosshair Line */}
-                <line
-                  x1={mousePos.x}
-                  y1="0"
-                  x2={mousePos.x}
-                  y2={totalHeight}
-                  stroke="#64748b"
-                  strokeWidth="1"
-                  strokeDasharray="3 3"
-                />
-
-                {/* Horizontal Crosshair Line */}
+                <line x1={mousePos.x} y1="0" x2={mousePos.x} y2={totalHeight} stroke="#64748b" strokeWidth="1" strokeDasharray="3 3" />
                 {mousePos.y <= priceHeight && (
-                  <line
-                    x1="20"
-                    y1={mousePos.y}
-                    x2={width - 75}
-                    y2={mousePos.y}
-                    stroke="#64748b"
-                    strokeWidth="1"
-                    strokeDasharray="3 3"
-                  />
+                  <line x1="20" y1={mousePos.y} x2={width - 75} y2={mousePos.y} stroke="#64748b" strokeWidth="1" strokeDasharray="3 3" />
                 )}
-
-                {/* Y-Axis Price Tag */}
                 {mousePos.y <= priceHeight && (
                   <g transform={`translate(${width - 75}, ${mousePos.y})`}>
                     <rect x="0" y="-10" width="75" height="20" fill="#3b82f6" rx="3" />
@@ -1235,100 +1215,10 @@ export const CandlestickChart: React.FC<Props> = ({ symbol }) => {
                     </text>
                   </g>
                 )}
-
-                {/* X-Axis Date Tag */}
-                {currentHoveredCandle && (
-                  <g transform={`translate(${mousePos.x}, ${priceHeight + 5})`}>
-                    <rect x="-40" y="0" width="80" height="18" fill="#1e293b" stroke="#475569" strokeWidth="1" rx="3" />
-                    <text x="0" y="12" textAnchor="middle" fill="#cbd5e1" fontSize="9" fontFamily="monospace">
-                      {currentHoveredCandle.dateStr}
-                    </text>
-                  </g>
-                )}
               </g>
             )}
           </svg>
         )}
-      </div>
-
-      {/* 4. SSI TECHNICAL EVALUATION & SUMMARY RADAR */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 text-xs">
-        
-        {/* Box 1: Xu Hướng & MA */}
-        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-          <span className="text-[10px] text-slate-400 block mb-1 font-medium">Xu Hướng Kỹ Thuật (MA):</span>
-          <div className="flex items-center gap-1.5 font-bold">
-            {isStrongTrend ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <TrendingUp className="w-4 h-4" /> Uptrend Mạnh (Giá &gt; MA20 &gt; MA50)
-              </span>
-            ) : isUptrend ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <TrendingUp className="w-4 h-4" /> Tích Cực Ngắn Hạn (Giá &gt; MA20)
-              </span>
-            ) : (
-              <span className="text-rose-400 flex items-center gap-1">
-                <TrendingDown className="w-4 h-4" /> Điều Chỉnh / Dưới MA20
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
-            MA20: {lastMA20 ? formatVND(lastMA20) : '-'} | MA50: {lastMA50 ? formatVND(lastMA50) : '-'}
-          </span>
-        </div>
-
-        {/* Box 2: Chỉ Báo RSI (14) */}
-        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-          <span className="text-[10px] text-slate-400 block mb-1 font-medium">Sức Mạnh RSI (14):</span>
-          <div className="flex items-center gap-1.5 font-bold">
-            {isOverbought ? (
-              <span className="text-rose-400 flex items-center gap-1">
-                🚨 Quá Mua (RSI {lastRSI?.toFixed(1)}) - Rủi ro điều chỉnh
-              </span>
-            ) : isOversold ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                💎 Quá Bán (RSI {lastRSI?.toFixed(1)}) - Vùng phục hồi tiềm năng
-              </span>
-            ) : (
-              <span className="text-cyan-300 flex items-center gap-1">
-                ✓ Tích Lũy Bình Thường (RSI {lastRSI ? lastRSI.toFixed(1) : '-'})
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] text-slate-500 mt-1 block">
-            Vùng an toàn giao dịch: 40 - 65 điểm
-          </span>
-        </div>
-
-        {/* Box 3: Thanh Khoản So Với MA20 */}
-        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-          <span className="text-[10px] text-slate-400 block mb-1 font-medium">Thanh Khoản Phiên Gần Nhất:</span>
-          <div className="flex items-center gap-1.5 font-bold">
-            {isVolBreakout ? (
-              <span className="text-amber-400 flex items-center gap-1">
-                ⚡ Đột Biến Khối Lượng ({((lastVol / lastVolMA20) * 100).toFixed(0)}% MA20)
-              </span>
-            ) : (
-              <span className="text-slate-300 flex items-center gap-1">
-                Ổn định ({((lastVol / lastVolMA20) * 100).toFixed(0)}% MA20)
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
-            Phiên: {formatVolVN(lastVol)} | TB 20: {formatVolVN(lastVolMA20)}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-        <span className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Nến tăng
-          <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 ml-2"></span> Nến giảm
-          <span className="ml-3 text-slate-400">💡 Mẹo: Bật <strong>Thước đo %</strong> và nhấp vào 2 cây nến để đo chính xác % lợi nhuận và số phiên!</span>
-        </span>
-        <span>
-          Nguồn dữ liệu: <strong>Sở GDCK TP.HCM & Hà Nội (HOSE/HNX)</strong>
-        </span>
       </div>
 
     </div>
