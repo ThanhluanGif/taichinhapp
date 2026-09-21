@@ -1,16 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { StockQuote, SectorKey, StocksDataPayload } from '@/types/stock';
+import { StockQuote, SectorKey, StocksDataPayload, MarketIndex } from '@/types/stock';
+import { StockDetailModal } from './StockDetailModal';
+import { MarketIndicesBar } from './MarketIndicesBar';
 import {
   Search,
   Star,
   RefreshCw,
-  TrendingUp,
-  TrendingDown,
-  Layers,
-  ArrowUpDown,
-  Building2,
+  LineChart,
 } from 'lucide-react';
 
 interface Props {
@@ -36,6 +34,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
   const [watchlist, setWatchlist] = useState<string[]>(['FPT', 'HPG', 'SSI', 'VCB', 'VND', 'MWG']);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string>('');
+  const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
 
   // Load watchlist from LocalStorage
   useEffect(() => {
@@ -54,7 +53,8 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
     localStorage.setItem('user_stock_watchlist', JSON.stringify(newList));
   };
 
-  const toggleWatchlist = (symbol: string) => {
+  const toggleWatchlist = (symbol: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if (watchlist.includes(symbol)) {
       saveWatchlist(watchlist.filter((s) => s !== symbol));
     } else {
@@ -62,7 +62,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
     }
   };
 
-  // Fetch stocks data
+  // Fetch stocks & indices data
   const fetchStockData = async () => {
     setIsLoading(true);
     try {
@@ -82,7 +82,6 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
 
   useEffect(() => {
     fetchStockData();
-    // Auto refresh every 30s
     const interval = setInterval(fetchStockData, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -127,7 +126,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
 
   const formatPrice = (val: number) => {
     if (!val) return '-';
-    return (val / 1000).toFixed(2); // Convert e.g. 23400 -> 23.40 (like SSI iBoard)
+    return (val / 1000).toFixed(2);
   };
 
   const formatVol = (val: number) => {
@@ -139,7 +138,11 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
 
   return (
     <div className="bg-slate-950 text-slate-100 rounded-xl border border-slate-800 shadow-2xl overflow-hidden">
-      {/* Top Header Bar */}
+      
+      {/* 1. Market Indices Ticker Bar (VN-INDEX, VN30, HNX, UPCOM) */}
+      {data?.indices && <MarketIndicesBar indices={data.indices} />}
+
+      {/* 2. Top Header Bar */}
       <div className="bg-slate-900/90 px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-black text-white text-sm shadow-md shadow-blue-500/30">
@@ -153,7 +156,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
               </span>
             </h2>
             <p className="text-[11px] text-slate-400">
-              Dữ liệu chuẩn SSI iBoard - Cập nhật lúc {lastRefresh || 'vừa xong'}
+              Nhấp vào mã bất kỳ để mở <strong>Biểu đồ nến kỹ thuật</strong> & <strong>Đánh giá doanh nghiệp</strong>
             </p>
           </div>
         </div>
@@ -191,7 +194,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
         </div>
       </div>
 
-      {/* Sector Category Tabs */}
+      {/* 3. Sector Category Tabs */}
       <div className="bg-slate-900/60 px-4 py-2 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto text-xs no-scrollbar">
         {SECTOR_TABS.map((tab) => {
           const isActive = activeSector === tab.key;
@@ -215,7 +218,7 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
         })}
       </div>
 
-      {/* Main Stock Table */}
+      {/* 4. Main Stock Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse font-mono">
           <thead>
@@ -244,12 +247,13 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
               <th className="py-2.5 px-3 text-right text-slate-300 font-semibold">Tổng KL</th>
               <th className="py-2.5 px-2 text-right text-slate-400">Cao</th>
               <th className="py-2.5 px-2 text-right text-slate-400">Thấp</th>
+              <th className="py-2.5 px-3 text-center text-blue-400">Xem</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 text-xs">
             {displayedStocks.length === 0 ? (
               <tr>
-                <td colSpan={16} className="py-12 text-center text-slate-500">
+                <td colSpan={17} className="py-12 text-center text-slate-500">
                   {isLoading ? 'Đang tải bảng giá SSI iBoard...' : 'Không tìm thấy mã cổ phiếu nào'}
                 </td>
               </tr>
@@ -263,17 +267,17 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
                   stock.floor
                 );
                 const isGain = stock.priceChange > 0;
-                const isLoss = stock.priceChange < 0;
 
                 return (
                   <tr
                     key={stock.symbol}
-                    className="hover:bg-slate-800/50 transition-colors group"
+                    onClick={() => setSelectedStock(stock)}
+                    className="hover:bg-slate-800/60 transition-colors group cursor-pointer"
                   >
                     {/* Star / Watchlist */}
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => toggleWatchlist(stock.symbol)}
+                        onClick={(e) => toggleWatchlist(stock.symbol, e)}
                         className={`transition-colors ${
                           isStarred
                             ? 'text-amber-400 hover:text-amber-300'
@@ -287,8 +291,8 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
 
                     {/* Stock Symbol */}
                     <td className="py-2 px-3 font-bold text-slate-100 group-hover:text-blue-400 transition-colors">
-                      <div className="flex items-center gap-1">
-                        <span>{stock.symbol}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">{stock.symbol}</span>
                         <span className="text-[10px] text-slate-500 font-sans hidden sm:inline truncate max-w-[120px]" title={stock.name}>
                           {stock.name}
                         </span>
@@ -368,6 +372,21 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
                     <td className="py-2 px-2 text-right text-rose-400">
                       {formatPrice(stock.lowest)}
                     </td>
+
+                    {/* View Button */}
+                    <td className="py-2 px-3 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStock(stock);
+                        }}
+                        className="p-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all text-[11px] font-sans flex items-center gap-1 mx-auto"
+                        title="Xem biểu đồ & chỉ số"
+                      >
+                        <LineChart className="w-3.5 h-3.5" />
+                        <span className="hidden md:inline">Đánh giá</span>
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -397,9 +416,15 @@ export const SSIBoard: React.FC<Props> = ({ initialData }) => {
         </div>
 
         <div>
-          Tổng hiển thị: <strong className="text-white">{displayedStocks.length}</strong> mã cổ phiếu
+          Tổng hiển thị: <strong className="text-white">{displayedStocks.length}</strong> mã cổ phiếu (Nhấp mã để xem biểu đồ nến & chỉ số)
         </div>
       </div>
+
+      {/* 5. Stock Detail Modal (TradingView Candlestick + Financial Metrics) */}
+      <StockDetailModal
+        stock={selectedStock}
+        onClose={() => setSelectedStock(null)}
+      />
     </div>
   );
 };

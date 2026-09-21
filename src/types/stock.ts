@@ -20,6 +20,35 @@ export interface StockQuote {
   exchange: string;
 }
 
+export interface MarketIndex {
+  symbol: string;
+  name: string;
+  value: number;
+  change: number;
+  changePercent: number;
+}
+
+export interface CompanyProfile {
+  ticker: string;
+  nameVi: string;
+  industry: string;
+  website: string;
+  marketCap: number;
+  pe: number;
+  pb: number;
+  roe: number;
+  roa: number;
+  eps: number;
+  dividendYield: number;
+  beta: number;
+  valuationPoint: number;
+  financialHealthPoint: number;
+  growthPoint: number;
+  qualityValuation: string;
+  businessOverview: string;
+  mainService: string;
+}
+
 export type SectorKey =
   | 'WATCHLIST'
   | 'VN30'
@@ -32,6 +61,7 @@ export type SectorKey =
   | 'DAU_KHI_NANG_LUONG';
 
 export interface StocksDataPayload {
+  indices?: MarketIndex[];
   vn30: StockQuote[];
   all: StockQuote[];
   sectors: Record<string, string[]>;

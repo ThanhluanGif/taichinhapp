@@ -1,9 +1,11 @@
 """
-Fetches real-time stock quotes from SSI iBoard for VN30 and HOSE (VN-Index)
+Fetches real-time stock quotes from SSI iBoard for VN30 and HOSE (VN-Index),
+Market Indices from VNDirect, and Company Profiles & Financial Ratios from Simplize.
 """
 
 import os
 import json
+import time
 import requests
 
 HEADERS = {
@@ -42,10 +44,82 @@ def clean_stock_item(raw: dict) -> dict:
         "exchange": raw.get("exchange", "hose").upper()
     }
 
+def fetch_market_indices():
+    now = int(time.time())
+    from_time = now - 86400 * 30
+    indices = []
+    targets = [
+        ('VNINDEX', 'VN-INDEX'),
+        ('VN30', 'VN30-INDEX'),
+        ('HNX', 'HNX-INDEX'),
+        ('UPCOM', 'UPCOM-INDEX')
+    ]
+    for sym, name in targets:
+        try:
+            url = f'https://dchart-api.vndirect.com.vn/dchart/history?symbol={sym}&resolution=D&from={from_time}&to={now}'
+            r = requests.get(url, headers=HEADERS, timeout=5)
+            d = r.json()
+            if d.get('c'):
+                latest = d['c'][-1]
+                prev = d['c'][-2] if len(d['c']) > 1 else latest
+                chg = round(latest - prev, 2)
+                pct = round((chg / prev) * 100, 2) if prev else 0
+                indices.append({
+                    'symbol': sym,
+                    'name': name,
+                    'value': latest,
+                    'change': chg,
+                    'changePercent': pct
+                })
+        except Exception as e:
+            print(f"⚠️ Lỗi tải chỉ số {sym}: {e}")
+    return indices
+
+def fetch_company_profiles(symbols):
+    profiles = {}
+    print(f"📊 Đang tải hồ sơ & chỉ số tài chính cho {len(symbols)} cổ phiếu trọng điểm...")
+    for sym in symbols[:35]: # Top 35 stocks
+        try:
+            url = f"https://api.simplize.vn/api/company/summary/{sym}"
+            r = requests.get(url, headers=HEADERS, timeout=4)
+            if r.status_code == 200:
+                data = r.json().get('data', {})
+                profiles[sym] = {
+                    "ticker": sym,
+                    "nameVi": data.get("nameVi", ""),
+                    "industry": data.get("industryActivity", ""),
+                    "website": data.get("website", ""),
+                    "marketCap": data.get("marketCap", 0),
+                    "pe": data.get("peRatio", 0),
+                    "pb": data.get("pbRatio", 0),
+                    "roe": round(data.get("roe", 0), 2) if data.get("roe") else 0,
+                    "roa": round(data.get("roa", 0), 2) if data.get("roa") else 0,
+                    "eps": data.get("epsRatio", 0),
+                    "dividendYield": round(data.get("dividendYieldCurrent", 0) * 100, 2) if data.get("dividendYieldCurrent") else 0,
+                    "beta": round(data.get("beta5y", 1.0), 2) if data.get("beta5y") else 1.0,
+                    "valuationPoint": data.get("valuationPoint", 0),
+                    "financialHealthPoint": data.get("financialHealthPoint", 0),
+                    "growthPoint": data.get("growthPoint", 0),
+                    "qualityValuation": data.get("qualityValuation", "Đang cập nhật"),
+                    "businessOverview": data.get("businessLine", ""),
+                    "mainService": data.get("mainService", "")
+                }
+        except Exception as e:
+            print(f"⚠️ Không thể tải hồ sơ {sym}: {e}")
+    return profiles
+
 def fetch_all_stocks():
-    print("🚀 Bắt đầu lấy dữ liệu bảng giá SSI iBoard (VN-Index & VN30)...")
+    print("🚀 Bắt đầu lấy dữ liệu bảng giá SSI iBoard & Chỉ số thị trường...")
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../public/data"))
+    os.makedirs(output_dir, exist_ok=True)
     
-    # 1. Fetch VN30
+    # 1. Fetch Market Indices
+    indices = fetch_market_indices()
+    with open(os.path.join(output_dir, "indices.json"), "w", encoding="utf-8") as f:
+        json.dump(indices, f, ensure_ascii=False, indent=2)
+    print(f"✅ Đã lưu {len(indices)} chỉ số thị trường (VNINDEX, VN30, HNX, UPCOM)")
+
+    # 2. Fetch VN30
     vn30_stocks = []
     try:
         r_vn30 = requests.get('https://iboard-query.ssi.com.vn/stock/group/VN30', headers=HEADERS, timeout=10)
@@ -56,7 +130,7 @@ def fetch_all_stocks():
     except Exception as e:
         print(f"⚠️ Lỗi tải VN30: {e}")
 
-    # 2. Fetch all HOSE (VN-Index)
+    # 3. Fetch all HOSE (VN-Index)
     all_hose_stocks = []
     try:
         r_hose = requests.get('https://iboard-query.ssi.com.vn/stock/exchange/hose', headers=HEADERS, timeout=15)
@@ -68,19 +142,24 @@ def fetch_all_stocks():
         print(f"⚠️ Lỗi tải HOSE: {e}")
 
     payload = {
+        "indices": indices,
         "vn30": vn30_stocks,
         "all": all_hose_stocks,
         "sectors": SECTOR_MAPPING,
         "updated_at": requests.utils.default_user_agent()
     }
 
-    # Save to public/data/stocks.json
-    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../public/data"))
-    os.makedirs(output_dir, exist_ok=True)
     out_file = os.path.join(output_dir, "stocks.json")
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"💾 Đã lưu dữ liệu bảng giá tại: {out_file}")
+
+    # 4. Fetch Company Profiles for VN30 + Key symbols
+    key_symbols = [s['symbol'] for s in vn30_stocks] or ["FPT", "HPG", "VCB", "SSI", "VND", "MWG", "TCB", "MBB", "VHM", "VIC"]
+    profiles = fetch_company_profiles(key_symbols)
+    with open(os.path.join(output_dir, "company_profiles.json"), "w", encoding="utf-8") as f:
+        json.dump(profiles, f, ensure_ascii=False, indent=2)
+    print(f"✅ Đã lưu hồ sơ doanh nghiệp cho {len(profiles)} mã cổ phiếu")
     
     return payload
 
