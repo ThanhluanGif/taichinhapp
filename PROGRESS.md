@@ -1,7 +1,7 @@
 # Báo Cáo Tiến Độ Dự Án (Personal Economic Command Center)
 
 **Cập nhật lần cuối:** 2026-09-22  
-**Trạng thái chung:** 🟢 **Hoàn Thành Radar Đột Biến Dòng Tiền, Khuyến Nghị Đầu Tư & Tích Hợp Tin Tức Doanh Nghiệp**  
+**Trạng thái chung:** 🟢 **Hoàn Thành Nâng Cấp Biểu Đồ Nến Chuẩn Cổ Phiếu Việt Nam & Sổ Lệnh Realtime Cắt Lỗ / Chốt Lời**  
 
 ---
 
@@ -9,20 +9,9 @@
 
 | Hạng mục | Trạng thái | Chi tiết |
 | :--- | :---: | :--- |
-| **1. Radar Đột Biến & Đầu Tư Hôm Nay** | ✅ Hoàn thành | Tự động phân tích và trả lời: **"Hôm nay đầu tư vào đâu để tối ưu lợi nhuận?"** (Top 4 cổ phiếu đột phá) |
-| **2. Đột Biến Khối Ngoại & Nội Địa** | ✅ Hoàn thành | 2 cột radar phát hiện: **Top khối ngoại mua ròng mạnh nhất** + **Top bùng nổ thanh khoản & giá nội địa** |
-| **3. Đánh giá chuyên sâu kết hợp Tin tức** | ✅ Hoàn thành | Tích hợp tin tức báo chí trực tiếp vào từng cổ phiếu (tự động lọc các bài báo liên quan đến mã) |
-| **4. Biểu đồ nến TradingView tức thì** | ✅ Hoàn thành | Nhấp vào mã là mở xem biểu đồ nến ngay lập tức, **bỏ qua hoàn toàn mọi thông báo/hộp thoại trung gian** |
-| **5. Bảng giá điện tử SSI iBoard** | ✅ Hoàn thành | Đầy đủ cột: Trần, Sàn, TC, Mua 1, Khớp Lệnh (+/-, %), Bán 1, Tổng KL, Cao, Thấp |
-| **6. Thanh chỉ số thị trường** | ✅ Hoàn thành | Điểm số & biến động trực tiếp của **VN-INDEX**, **VN30**, **HNX**, **UPCOM** |
-| **7. Phân bổ tỷ trọng danh mục** | ✅ Hoàn thành | Gợi ý phân bổ vốn tối ưu rủi ro: 50% VN30 cơ bản + 30% Dòng tiền đột biến + 20% Tiền mặt |
-
----
-
-## 🚀 Tính Năng Nổi Bật Mới Được Cập Nhật
-1. **Khuyến Nghị Đầu Tư Hôm Nay:** Hệ thống chấm điểm tự động dựa trên:
-   - Sức khỏe tài chính (ROE, P/E, EPS).
-   - Dòng tiền gom ròng của khối ngoại.
-   - Xung lực bùng nổ giá & thanh khoản nội địa.
-   - Tin tức hỗ trợ doanh nghiệp.
-2. **Xem Biểu Đồ Nhanh 1 Chạm:** Không còn bất kỳ popup hay cảnh báo nào, ấn vào mã là xem nến Nhật trực quan ngay lập tức.
+| **1. Biểu đồ nến kỹ thuật chuẩn VN (Zero Apple)** | ✅ Hoàn thành | Tự vẽ biểu đồ nến Nhật thực tế cho từng mã cổ phiếu Việt Nam (lấy dữ liệu OHLCV từ VNDirect), đầy đủ nến, râu nến, khối lượng Volume, khung 1M, 3M, 6M, 1Y. Không còn bị nhảy sang Apple |
+| **2. Sổ lệnh Danh mục Realtime** | ✅ Hoàn thành | **Giá hiện tại tự động đồng bộ Realtime từ sàn**. Giá vốn ban đầu bạn tự nhập. Mã cổ phiếu trích trực tiếp từ 408+ mã chứng khoán |
+| **3. Điểm Cắt Lỗ & Chốt Lời Rõ Ràng** | ✅ Hoàn thành | - **Mức cắt lỗ bắt buộc:** -7% từ giá vốn (Bảo vệ 93% vốn).<br>- **Chốt lãi mục tiêu 1:** +15% (Chốt 50% khối lượng).<br>- **Chốt lãi mục tiêu 2:** +25% (Chốt phần còn lại).<br>- **Cảnh báo hành động trực quan:** 🚨 CẮT LỖ KHẨN CẤP / 🎯 ĐẠT ĐIỂM CHỐT LÃI / 🟢 NẮM GIỮ |
+| **4. Phân tích tiềm năng ở đâu** | ✅ Hoàn thành | Phân tích 3 trụ cột: **Dòng tiền khối ngoại/nội**, **Chỉ số tài chính ROE/PE/EPS**, và **Xúc tác tin tức vĩ mô/doanh nghiệp** |
+| **5. Radar Đột Biến & Đầu Tư Hôm Nay** | ✅ Hoàn thành | Top 4 cổ phiếu tiềm năng nhất hôm nay + 2 cột đột biến khối ngoại gom ròng & thanh khoản nội địa bùng nổ |
+| **6. Bảng giá điện tử SSI iBoard** | ✅ Hoàn thành | Đầy đủ cột: Trần, Sàn, TC, Mua 1, Khớp Lệnh (+/-, %), Bán 1, Tổng KL, Cao, Thấp |

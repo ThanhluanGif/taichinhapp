@@ -1,27 +1,41 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { StockItem } from '@/types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StockQuote } from '@/types/stock';
 import {
   TrendingUp,
   TrendingDown,
   Plus,
   Trash2,
-  DollarSign,
-  Edit2,
-  Check,
-  X,
   PieChart,
+  ShieldAlert,
+  Target,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
-const INITIAL_PORTFOLIO: StockItem[] = [
+export interface PortfolioStock {
+  id: string;
+  symbol: string;
+  name?: string;
+  shares: number;
+  buyPrice: number;       // Giá vốn ban đầu người dùng tự nhập (VND)
+  currentPrice: number;   // Giá hiện tại tự động cập nhật Realtime từ sàn (VND)
+  stopLossPercent?: number; // % Cắt lỗ (Mặc định -7%)
+  takeProfitPercent?: number; // % Chốt lãi (Mặc định +18%)
+}
+
+const INITIAL_PORTFOLIO: PortfolioStock[] = [
   {
     id: '1',
     symbol: 'FPT',
     name: 'Tập đoàn FPT',
     shares: 1000,
-    buyPrice: 110000,
+    buyPrice: 125000,
     currentPrice: 135000,
+    stopLossPercent: 7,
+    takeProfitPercent: 18,
   },
   {
     id: '2',
@@ -30,6 +44,8 @@ const INITIAL_PORTFOLIO: StockItem[] = [
     shares: 2000,
     buyPrice: 28500,
     currentPrice: 26800,
+    stopLossPercent: 7,
+    takeProfitPercent: 18,
   },
   {
     id: '3',
@@ -38,11 +54,17 @@ const INITIAL_PORTFOLIO: StockItem[] = [
     shares: 500,
     buyPrice: 88000,
     currentPrice: 92500,
+    stopLossPercent: 7,
+    takeProfitPercent: 18,
   },
 ];
 
-export const PortfolioTracker: React.FC = () => {
-  const [portfolio, setPortfolio] = useState<StockItem[]>([]);
+interface Props {
+  stocks?: StockQuote[];
+}
+
+export const PortfolioTracker: React.FC<Props> = ({ stocks = [] }) => {
+  const [portfolio, setPortfolio] = useState<PortfolioStock[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Form states for adding stock
@@ -50,16 +72,13 @@ export const PortfolioTracker: React.FC = () => {
   const [symbol, setSymbol] = useState('');
   const [shares, setShares] = useState('');
   const [buyPrice, setBuyPrice] = useState('');
-  const [currentPrice, setCurrentPrice] = useState('');
+  const [stopLoss, setStopLoss] = useState('7');
+  const [takeProfit, setTakeProfit] = useState('18');
 
-  // Editing price state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editPriceVal, setEditPriceVal] = useState('');
-
-  // Load portfolio from LocalStorage
+  // 1. Load portfolio from LocalStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('personal_portfolio_v1');
+      const saved = localStorage.getItem('personal_portfolio_v2');
       if (saved) {
         setPortfolio(JSON.parse(saved));
       } else {
@@ -71,65 +90,85 @@ export const PortfolioTracker: React.FC = () => {
     setIsLoaded(true);
   }, []);
 
-  // Save portfolio to LocalStorage
+  // 2. TỰ ĐỘNG CẬP NHẬT REALTIME GIÁ HIỆN TẠI TỪ BẢNG GIÁ CHỨNG KHOÁN (SSI iBoard)
+  useEffect(() => {
+    if (stocks.length === 0 || portfolio.length === 0) return;
+
+    let hasUpdate = false;
+    const updated = portfolio.map((item) => {
+      const liveStock = stocks.find((s) => s.symbol.toUpperCase() === item.symbol.toUpperCase());
+      if (liveStock && liveStock.matchedPrice > 0 && liveStock.matchedPrice !== item.currentPrice) {
+        hasUpdate = true;
+        return {
+          ...item,
+          currentPrice: liveStock.matchedPrice,
+          name: item.name || liveStock.name,
+        };
+      }
+      return item;
+    });
+
+    if (hasUpdate) {
+      setPortfolio(updated);
+    }
+  }, [stocks]);
+
+  // Save to LocalStorage
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('personal_portfolio_v1', JSON.stringify(portfolio));
+      localStorage.setItem('personal_portfolio_v2', JSON.stringify(portfolio));
     }
   }, [portfolio, isLoaded]);
 
   // Financial calculations
-  const totalCost = portfolio.reduce(
-    (acc, item) => acc + item.shares * item.buyPrice,
-    0
+  const totalCost = useMemo(
+    () => portfolio.reduce((acc, item) => acc + item.shares * item.buyPrice, 0),
+    [portfolio]
   );
-  const totalCurrentValue = portfolio.reduce(
-    (acc, item) => acc + item.shares * item.currentPrice,
-    0
+  const totalCurrentValue = useMemo(
+    () => portfolio.reduce((acc, item) => acc + item.shares * item.currentPrice, 0),
+    [portfolio]
   );
   const totalProfitLoss = totalCurrentValue - totalCost;
-  const totalProfitLossPercent =
-    totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
+  const totalProfitLossPercent = totalCost > 0 ? (totalProfitLoss / totalCost) * 100 : 0;
+
+  // Handler: When user types a ticker, auto-suggest current market price
+  const handleSymbolChange = (sym: string) => {
+    const clean = sym.toUpperCase().trim();
+    setSymbol(clean);
+    const found = stocks.find((s) => s.symbol.toUpperCase() === clean);
+    if (found && found.matchedPrice > 0) {
+      if (!buyPrice) setBuyPrice(found.matchedPrice.toString());
+    }
+  };
 
   const handleAddStock = (e: React.FormEvent) => {
     e.preventDefault();
     if (!symbol || !shares || !buyPrice) return;
 
-    const newStock: StockItem = {
+    const cleanSymbol = symbol.toUpperCase().trim();
+    const liveStock = stocks.find((s) => s.symbol.toUpperCase() === cleanSymbol);
+
+    const newStock: PortfolioStock = {
       id: Date.now().toString(),
-      symbol: symbol.toUpperCase().trim(),
+      symbol: cleanSymbol,
+      name: liveStock?.name || cleanSymbol,
       shares: parseFloat(shares),
       buyPrice: parseFloat(buyPrice),
-      currentPrice: currentPrice ? parseFloat(currentPrice) : parseFloat(buyPrice),
+      currentPrice: liveStock?.matchedPrice || parseFloat(buyPrice),
+      stopLossPercent: parseFloat(stopLoss) || 7,
+      takeProfitPercent: parseFloat(takeProfit) || 18,
     };
 
     setPortfolio([...portfolio, newStock]);
     setSymbol('');
     setShares('');
     setBuyPrice('');
-    setCurrentPrice('');
     setShowAddForm(false);
   };
 
   const handleDeleteStock = (id: string) => {
     setPortfolio(portfolio.filter((item) => item.id !== id));
-  };
-
-  const startEditPrice = (item: StockItem) => {
-    setEditingId(item.id);
-    setEditPriceVal(item.currentPrice.toString());
-  };
-
-  const saveEditPrice = (id: string) => {
-    const parsed = parseFloat(editPriceVal);
-    if (!isNaN(parsed) && parsed > 0) {
-      setPortfolio(
-        portfolio.map((item) =>
-          item.id === id ? { ...item, currentPrice: parsed } : item
-        )
-      );
-    }
-    setEditingId(null);
   };
 
   const formatVND = (amount: number) => {
@@ -140,55 +179,61 @@ export const PortfolioTracker: React.FC = () => {
     }).format(amount);
   };
 
+  const formatPrice = (val: number) => (val / 1000).toFixed(2);
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+    <div className="bg-slate-900 rounded-xl border border-slate-800 shadow-xl p-4 space-y-4 text-xs font-sans">
+      
+      {/* Top Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+          <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
             <PieChart className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Danh Mục Cổ Phiếu
+            <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+              Sổ Lệnh & Danh Mục Đầu Tư
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded border border-emerald-500/30 flex items-center gap-1">
+                <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Live Sync
+              </span>
             </h3>
             <p className="text-[11px] text-slate-400">
-              {portfolio.length} mã đang nắm giữ
+              Giá hiện tại tự động cập nhật theo sàn chứng khoán
             </p>
           </div>
         </div>
 
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+          className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-sm"
         >
-          <Plus className="w-3.5 h-3.5" /> Thêm mã
+          <Plus className="w-3.5 h-3.5" /> Thêm mã mua
         </button>
       </div>
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+        <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
           <span className="text-[11px] font-medium text-slate-400 block mb-0.5">
-            Tổng Giá Trị Hiện Tại
+            Tổng Vốn Đầu Tư (Giá Mua)
           </span>
-          <span className="text-sm font-bold text-slate-900 dark:text-white">
-            {formatVND(totalCurrentValue)}
+          <span className="text-sm font-bold text-slate-200">
+            {formatVND(totalCost)}
           </span>
         </div>
 
-        <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+        <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
           <span className="text-[11px] font-medium text-slate-400 block mb-0.5">
-            Tổng Lãi / Lỗ
+            Tổng Lãi / Lỗ Realtime
           </span>
           <div className="flex items-center gap-1">
             {totalProfitLoss >= 0 ? (
-              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center">
+              <span className="text-xs font-bold text-emerald-400 flex items-center">
                 <TrendingUp className="w-3.5 h-3.5 mr-0.5" />
                 +{formatVND(totalProfitLoss)} ({totalProfitLossPercent.toFixed(2)}%)
               </span>
             ) : (
-              <span className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center">
+              <span className="text-xs font-bold text-rose-400 flex items-center">
                 <TrendingDown className="w-3.5 h-3.5 mr-0.5" />
                 {formatVND(totalProfitLoss)} ({totalProfitLossPercent.toFixed(2)}%)
               </span>
@@ -197,71 +242,98 @@ export const PortfolioTracker: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Stock Form */}
+      {/* Form: Thêm cổ phiếu đã mua */}
       {showAddForm && (
         <form
           onSubmit={handleAddStock}
-          className="p-3 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-200 dark:border-blue-900/50 space-y-2 text-xs"
+          className="p-3 bg-slate-950 rounded-xl border border-blue-500/40 space-y-3"
         >
-          <div className="font-semibold text-blue-900 dark:text-blue-300">
-            Thêm cổ phiếu mới
+          <div className="font-bold text-blue-400 flex items-center justify-between">
+            <span>Thêm cổ phiếu vào sổ lệnh</span>
+            <span className="text-[10px] text-slate-400 font-normal">Giá hiện tại sẽ tự động chạy</span>
           </div>
+
           <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              placeholder="Mã CP (ví dụ: FPT)"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-              required
-            />
-            <input
-              type="number"
-              placeholder="Số lượng (cổ)"
-              value={shares}
-              onChange={(e) => setShares(e.target.value)}
-              className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-              required
-            />
-            <input
-              type="number"
-              placeholder="Giá mua vốn (VNĐ)"
-              value={buyPrice}
-              onChange={(e) => setBuyPrice(e.target.value)}
-              className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-              required
-            />
-            <input
-              type="number"
-              placeholder="Giá hiện tại (VNĐ)"
-              value={currentPrice}
-              onChange={(e) => setCurrentPrice(e.target.value)}
-              className="p-2 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-            />
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-1">Mã CP (trích từ sàn):</label>
+              <input
+                type="text"
+                placeholder="VD: FPT, HPG, SSI"
+                value={symbol}
+                onChange={(e) => handleSymbolChange(e.target.value)}
+                className="w-full p-2 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-1">Số lượng mua (cổ):</label>
+              <input
+                type="number"
+                placeholder="VD: 1000"
+                value={shares}
+                onChange={(e) => setShares(e.target.value)}
+                className="w-full p-2 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-1">Giá mua ban đầu (VNĐ):</label>
+              <input
+                type="number"
+                placeholder="VD: 125000"
+                value={buyPrice}
+                onChange={(e) => setBuyPrice(e.target.value)}
+                className="w-full p-2 rounded bg-slate-900 border border-slate-700 text-white font-mono"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-1">Cắt lỗ / Chốt lãi (%):</label>
+              <div className="flex gap-1">
+                <input
+                  type="number"
+                  title="% Cắt lỗ"
+                  value={stopLoss}
+                  onChange={(e) => setStopLoss(e.target.value)}
+                  className="w-1/2 p-2 rounded bg-slate-900 border border-rose-900/60 text-rose-400 font-mono text-center"
+                />
+                <input
+                  type="number"
+                  title="% Chốt lãi"
+                  value={takeProfit}
+                  onChange={(e) => setTakeProfit(e.target.value)}
+                  className="w-1/2 p-2 rounded bg-slate-900 border border-emerald-900/60 text-emerald-400 font-mono text-center"
+                />
+              </div>
+            </div>
           </div>
+
           <div className="flex justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={() => setShowAddForm(false)}
-              className="px-3 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+              className="px-3 py-1 rounded bg-slate-800 text-slate-300"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="px-3 py-1 rounded bg-blue-600 text-white font-medium hover:bg-blue-700"
+              className="px-4 py-1 rounded bg-blue-600 text-white font-bold hover:bg-blue-500"
             >
-              Lưu
+              Lưu sổ lệnh
             </button>
           </div>
         </form>
       )}
 
-      {/* Stock Items List */}
-      <div className="space-y-2">
+      {/* Stock Items List with Stop Loss & Take Profit Advisory */}
+      <div className="space-y-3">
         {portfolio.length === 0 ? (
-          <p className="text-xs text-slate-400 text-center py-4">
-            Chưa có cổ phiếu nào trong danh mục.
+          <p className="text-xs text-slate-500 text-center py-6">
+            Chưa có cổ phiếu nào trong danh mục. Nhấn &quot;Thêm mã mua&quot; để bắt đầu theo dõi.
           </p>
         ) : (
           portfolio.map((item) => {
@@ -271,86 +343,127 @@ export const PortfolioTracker: React.FC = () => {
             const profitLossPercent = (profitLoss / costVal) * 100;
             const isGain = profitLoss >= 0;
 
+            // Tính điểm cắt lỗ & chốt lời
+            const slPercent = item.stopLossPercent || 7;
+            const tpPercent = item.takeProfitPercent || 18;
+            const stopLossPrice = item.buyPrice * (1 - slPercent / 100);
+            const takeProfitPrice = item.buyPrice * (1 + tpPercent / 100);
+
+            // Đánh giá khuyến nghị hành động
+            const isStopLossTriggered = item.currentPrice <= stopLossPrice;
+            const isTakeProfitTriggered = item.currentPrice >= takeProfitPrice;
+
             return (
               <div
                 key={item.id}
-                className="p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center justify-between text-xs"
+                className={`p-3 rounded-xl border transition-all ${
+                  isStopLossTriggered
+                    ? 'bg-rose-950/20 border-rose-600/50 shadow-md shadow-rose-950/50'
+                    : isTakeProfitTriggered
+                    ? 'bg-emerald-950/20 border-emerald-500/50 shadow-md shadow-emerald-950/50'
+                    : 'bg-slate-950 border-slate-800/80 hover:border-slate-700'
+                }`}
               >
-                {/* Symbol & Shares */}
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white">
-                      {item.symbol}
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                      {item.shares.toLocaleString()} cổ
-                    </span>
+                {/* Row 1: Symbol & Realtime P/L */}
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-sm text-white">{item.symbol}</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                        {item.shares.toLocaleString()} CP
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate max-w-[150px]">
+                      {item.name}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Giá vốn: {formatVND(item.buyPrice)}
-                  </div>
-                </div>
 
-                {/* Price & P/L */}
-                <div className="text-right space-y-0.5">
-                  <div className="flex items-center justify-end gap-1">
-                    {editingId === item.id ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          value={editPriceVal}
-                          onChange={(e) => setEditPriceVal(e.target.value)}
-                          className="w-20 px-1 py-0.5 border text-xs rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                        />
-                        <button
-                          onClick={() => saveEditPrice(item.id)}
-                          className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <Check className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          className="p-1 text-slate-400 hover:bg-slate-100 rounded"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {formatVND(item.currentPrice)}
+                  <div className="text-right">
+                    <div className="font-bold text-xs font-mono">
+                      {isGain ? (
+                        <span className="text-emerald-400 flex items-center justify-end">
+                          <TrendingUp className="w-3 h-3 mr-0.5" />+{profitLossPercent.toFixed(2)}%
                         </span>
-                        <button
-                          onClick={() => startEditPrice(item)}
-                          className="text-slate-400 hover:text-blue-500 p-0.5"
-                          title="Cập nhật giá"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  <div
-                    className={`font-semibold text-[11px] flex items-center justify-end gap-0.5 ${
-                      isGain
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
-                    {isGain ? '+' : ''}
-                    {profitLossPercent.toFixed(2)}% ({formatVND(profitLoss)})
+                      ) : (
+                        <span className="text-rose-400 flex items-center justify-end">
+                          <TrendingDown className="w-3 h-3 mr-0.5" />{profitLossPercent.toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-[10px] font-mono ${isGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {isGain ? '+' : ''}{formatVND(profitLoss)}
+                    </div>
                   </div>
                 </div>
 
-                {/* Delete Button */}
-                <button
-                  onClick={() => handleDeleteStock(item.id)}
-                  className="text-slate-300 hover:text-red-500 transition-colors p-1 ml-2"
-                  title="Xóa mã"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {/* Row 2: Giá vốn vs Giá Realtime */}
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800/60 grid grid-cols-2 gap-2 text-[11px] font-mono mb-2">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] font-sans">Giá vốn bạn mua:</span>
+                    <strong className="text-slate-300">{formatPrice(item.buyPrice)} đ</strong>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-500 block text-[10px] font-sans">Giá sàn Realtime:</span>
+                    <strong className={isGain ? 'text-emerald-400' : 'text-rose-400'}>
+                      {formatPrice(item.currentPrice)} đ
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Row 3: CHIẾN LƯỢC CẮT LỖ & CHỐT LÃI (Action Advisory) */}
+                <div className="space-y-1.5 pt-1 border-t border-slate-800/80 text-[10px]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 flex items-center gap-1 font-sans">
+                      <ShieldAlert className="w-3 h-3 text-rose-400" />
+                      Cắt lỗ khi thủng:
+                    </span>
+                    <strong className="text-rose-400 font-mono">
+                      {formatPrice(stopLossPrice)} đ (-{slPercent}%)
+                    </strong>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 flex items-center gap-1 font-sans">
+                      <Target className="w-3 h-3 text-emerald-400" />
+                      Chốt lãi khi chạm:
+                    </span>
+                    <strong className="text-emerald-400 font-mono">
+                      {formatPrice(takeProfitPrice)} đ (+{tpPercent}%)
+                    </strong>
+                  </div>
+
+                  {/* Khuyến nghị hành động */}
+                  <div className="pt-1.5 flex items-center justify-between">
+                    {isStopLossTriggered ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold animate-pulse">
+                        <AlertTriangle className="w-3 h-3" />
+                        🚨 CẢNH BÁO: Cắt lỗ ngay bảo vệ vốn!
+                      </span>
+                    ) : isTakeProfitTriggered ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                        <CheckCircle2 className="w-3 h-3" />
+                        🎯 Đạt mục tiêu: Chốt lãi 50% - 100%!
+                      </span>
+                    ) : isGain ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Đang có lãi - Tiếp tục nắm giữ đến mục tiêu
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-slate-400">
+                        Vẫn trong vùng an toàn - Tiếp tục theo dõi
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => handleDeleteStock(item.id)}
+                      className="text-slate-500 hover:text-rose-400 transition-colors p-1"
+                      title="Xóa mã này khỏi sổ lệnh"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })
